@@ -10,10 +10,15 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for better PR creation
 
     - name: Set up Node.js
       uses: actions/setup-node@v4
@@ -38,21 +43,43 @@ jobs:
         name: playwright-results-${{ github.run_id }}
         path: |
           playwright-report/
+          test-results/
           trace.zip
 
     - name: Create Pull Request on Failure
       if: steps.run_tests.outcome == 'failure'
       uses: peter-evans/create-pull-request@v6
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.PLAYWRIGHT_PAT }}  # Use a PAT with appropriate permissions
         commit-message: "fix: Automated PR for failing Playwright tests"
         branch: "fix/failing-tests-${{ github.run_id }}" # Creates a unique branch for the fix
         base: ${{ github.ref_name }} # Creates PR against the branch the push was made to
         title: "🚨 Automated PR: Fix failing Playwright tests"
         body: |
-          Playwright tests failed on commit `${{ github.sha }}` in the `${{ github.ref_name }}` branch.
-          This Pull Request has been automatically created to address the failures.
+          ## Playwright Test Failures Detected
 
-          View Test Run Details
+          Tests failed on commit `${{ github.sha }}` in the `${{ github.ref_name }}` branch.
+          
+          ### Test Results
+          - [View Test Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - [Download Test Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
+
+          ### Common Issues
+          - Test timeouts
+          - Navigation failures
+          - Performance metric collection issues
+
+          ### Next Steps
+          1. Review the test report
+          2. Check the test artifacts for detailed traces
+          3. Address any failing tests
+          4. Update test timeouts if needed
+
+          This PR was automatically created to help track and fix the test failures.
         labels: bug, automated-pr, playwright-failure
         assignees: ${{ github.actor }} # Assigns the PR to the person who pushed
+        delete-branch: true  # Delete the branch after PR is merged
+        push-to-fork: ''  # Empty string means push to the same repository
+        author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+        committer: GitHub <noreply@github.com>
+        signoff: true

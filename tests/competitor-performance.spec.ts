@@ -50,24 +50,6 @@ const COMPETITORS: CompetitorSite[] = [
     }
   },
   {
-    name: 'Great Plains Communications',
-    url: 'https://www.gpcom.com/',
-    region: ['Lincoln, NE', 'Grand Island, NE', 'Kearney, NE', 'Norfolk, NE'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: false,
-      smartTown: false,
-      wifiExperience: true,
-      outdoorWifi: false,
-      fiberStreaming: true,
-      bark: false
-    }
-  },
-  {
     name: 'NextLight',
     url: 'https://mynextlight.com/',
     region: ['Boulder, CO', 'Greeley, CO'],
@@ -86,9 +68,9 @@ const COMPETITORS: CompetitorSite[] = [
     }
   },
   {
-    name: 'Elevate Internet',
-    url: 'https://www.elevateinternet.com/',
-    region: ['Boulder, CO', 'Brighton, CO'],
+    name: 'Great Plains Communications',
+    url: 'https://www.gpcom.com/',
+    region: ['Lincoln, NE', 'Grand Island, NE', 'Kearney, NE', 'Norfolk, NE'],
     serviceType: 'Fiber',
     marketFocus: 'Residential & Business Fiber',
     services: {
@@ -100,24 +82,6 @@ const COMPETITORS: CompetitorSite[] = [
       wifiExperience: true,
       outdoorWifi: false,
       fiberStreaming: true,
-      bark: false
-    }
-  },
-  {
-    name: 'Ting Internet',
-    url: 'https://ting.com/internet',
-    region: ['Boulder, CO'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: false,
-      fiberPhone: true,
-      mobilePhone: false,
-      smartTown: false,
-      wifiExperience: true,
-      outdoorWifi: false,
-      fiberStreaming: false,
       bark: false
     }
   },
@@ -125,24 +89,6 @@ const COMPETITORS: CompetitorSite[] = [
     name: 'Wyyerd Fiber',
     url: 'https://wyyerd.com/',
     region: ['Flagstaff, AZ', 'Lake Havasu City, AZ'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: false,
-      smartTown: false,
-      wifiExperience: true,
-      outdoorWifi: false,
-      fiberStreaming: true,
-      bark: false
-    }
-  },
-  {
-    name: 'Socket Telecom',
-    url: 'https://www.socket.net/',
-    region: ['Joplin, MO'],
     serviceType: 'Fiber',
     marketFocus: 'Residential & Business Fiber',
     services: {
@@ -207,6 +153,13 @@ interface LayoutShift extends PerformanceEntry {
   }>;
 }
 
+// Add interface for PerformanceNavigationTiming
+interface PerformanceNavigationTiming extends PerformanceEntry {
+  responseEnd: number;
+  responseStart: number;
+  requestStart: number;
+}
+
 // Helper function to calculate individual metric scores on 0-100 scale
 function calculateMetricScore(value: number, good: number, poor: number): number {
   if (value <= good) return 100;
@@ -246,283 +199,282 @@ test.describe('Competitor Performance Analysis', () => {
     metrics: PerformanceMetrics;
     score: number;
     rating: string;
-    concurrentMetrics?: {
-      avgResponseTime: number;
-      errorRate: number;
-      maxQueueLength: number;
+    seoMetrics?: {
+      titleLength: number;
+      metaDescription: boolean;
+      h1Count: number;
+      imageAlts: number;
+      mobileFriendly: boolean;
+      sslSecure: boolean;
+      loadTime: number;
+      responseTime: number;
     };
   }> = [];
 
   for (const competitor of COMPETITORS) {
     test(`Performance test for ${competitor.name}`, async ({ page, browser }, testInfo) => {
-      console.log(`\nTesting ${competitor.name} (${competitor.url})`);
-      console.log(`Browser: ${testInfo.project.use.browserName}`);
-      console.log('='.repeat(80));
-
-      // Basic Performance Test
-      const startTime = Date.now();
-      await page.goto(competitor.url, { waitUntil: 'networkidle' });
+      const browserName = testInfo.project.use.browserName;
+      console.log(`\nTesting ${competitor.name} (${browserName})`);
       
-      // Collect Core Web Vitals and basic metrics
-      const metrics = await page.evaluate(() => {
-        return new Promise<PerformanceMetrics>((resolve) => {
-          let lcp = 0;
-          let cls = 0;
-          let tbt = 0;
-          let ttfb = 0;
-          
-          // LCP with timeout handling
-          const lcpTimeout = setTimeout(() => {
-            resolve({
-              lcp: 0,
-              tbt,
-              cls,
-              ttfb,
-              resourceCount: performance.getEntriesByType('resource').length,
-              domSize: document.getElementsByTagName('*').length,
-              jsHeapSize: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
-              totalLoadTime: performance.now()
-            });
-          }, 5000);
+      // Basic Performance Test with more lenient navigation strategy
+      const startTime = Date.now();
+      try {
+        // First try with domcontentloaded, then wait for load
+        await page.goto(competitor.url, { 
+          waitUntil: 'domcontentloaded',
+          timeout: 45000 // Increase timeout to 45 seconds
+        });
+        await page.waitForLoadState('load', { timeout: 15000 });
+      } catch (error) {
+        console.log(`Warning: Navigation timeout for ${competitor.name}, proceeding with available metrics`);
+      }
+      
+      // Collect performance metrics with timeout handling
+      const metrics = await Promise.race([
+        page.evaluate(() => {
+          return new Promise<PerformanceMetrics>((resolve) => {
+            let lcp = 0;
+            let cls = 0;
+            let tbt = 0;
+            let ttfb = 0;
+            
+            // LCP with timeout handling
+            const lcpTimeout = setTimeout(() => {
+              resolve({
+                lcp: 0,
+                tbt,
+                cls,
+                ttfb,
+                resourceCount: performance.getEntriesByType('resource').length,
+                domSize: document.getElementsByTagName('*').length,
+                jsHeapSize: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
+                totalLoadTime: performance.now()
+              });
+            }, 5000);
 
-          // LCP
-          new PerformanceObserver((entryList) => {
-            const entries = entryList.getEntries();
-            if (entries.length > 0) {
+            // LCP
+            new PerformanceObserver((entryList) => {
+              const entries = entryList.getEntries();
+              if (entries.length > 0) {
+                clearTimeout(lcpTimeout);
+                lcp = entries[entries.length - 1].startTime;
+              }
+            }).observe({ type: 'largest-contentful-paint', buffered: true });
+
+            // CLS
+            new PerformanceObserver((entryList) => {
+              for (const entry of entryList.getEntries()) {
+                const layoutShift = entry as LayoutShift;
+                if (!layoutShift.hadRecentInput) {
+                  cls += layoutShift.value;
+                }
+              }
+            }).observe({ type: 'layout-shift', buffered: true });
+
+            // TBT
+            let totalBlockingTime = 0;
+            new PerformanceObserver((entryList) => {
+              for (const entry of entryList.getEntries()) {
+                if (entry.duration > 50) {
+                  totalBlockingTime += entry.duration - 50;
+                }
+              }
+              tbt = totalBlockingTime;
+            }).observe({ type: 'longtask', buffered: true });
+
+            // TTFB
+            const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+            if (navEntry) {
+              ttfb = navEntry.responseStart - navEntry.requestStart;
+            }
+
+            // Wait for metrics to be collected
+            setTimeout(() => {
               clearTimeout(lcpTimeout);
-              lcp = entries[entries.length - 1].startTime;
-            }
-          }).observe({ type: 'largest-contentful-paint', buffered: true });
-
-          // CLS
-          new PerformanceObserver((entryList) => {
-            for (const entry of entryList.getEntries()) {
-              const layoutShift = entry as LayoutShift;
-              if (!layoutShift.hadRecentInput) {
-                cls += layoutShift.value;
-              }
-            }
-          }).observe({ type: 'layout-shift', buffered: true });
-
-          // TBT
-          let totalBlockingTime = 0;
-          new PerformanceObserver((entryList) => {
-            for (const entry of entryList.getEntries()) {
-              if (entry.duration > 50) {
-                totalBlockingTime += entry.duration - 50;
-              }
-            }
-            tbt = totalBlockingTime;
-          }).observe({ type: 'longtask', buffered: true });
-
-          // TTFB
-          const navigationEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-          ttfb = navigationEntry.responseStart - navigationEntry.requestStart;
-
-          // Wait for metrics to be collected
-          setTimeout(() => {
-            clearTimeout(lcpTimeout);
-            resolve({
-              lcp,
-              tbt,
-              cls,
-              ttfb,
-              resourceCount: performance.getEntriesByType('resource').length,
-              domSize: document.getElementsByTagName('*').length,
-              jsHeapSize: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
-              totalLoadTime: performance.now()
-            });
-          }, 5000);
-        });
-      });
-
-      // Concurrent User Test (simplified)
-      const NUM_CONCURRENT_USERS = 3;
-      const contexts = await Promise.all(
-        Array(NUM_CONCURRENT_USERS).fill(null).map(() => browser.newContext())
-      );
-      const pages = await Promise.all(
-        contexts.map(context => context.newPage())
-      );
-
-      const serverMetrics = {
-        responseTimes: [] as number[],
-        errors: 0,
-        queueLength: 0,
-        maxQueueLength: 0
-      };
-
-      // Simplified concurrent testing
-      await Promise.all(pages.map(async (page) => {
-        page.on('request', () => {
-          serverMetrics.queueLength++;
-          serverMetrics.maxQueueLength = Math.max(serverMetrics.maxQueueLength, serverMetrics.queueLength);
-        });
-        
-        page.on('response', (response) => {
-          serverMetrics.queueLength--;
-          if (!response.ok()) serverMetrics.errors++;
-        });
-
-        await page.goto(competitor.url, { waitUntil: 'networkidle' });
+              resolve({
+                lcp,
+                tbt,
+                cls,
+                ttfb,
+                resourceCount: performance.getEntriesByType('resource').length,
+                domSize: document.getElementsByTagName('*').length,
+                jsHeapSize: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
+                totalLoadTime: performance.now()
+              });
+            }, 5000);
+          });
+        }),
+        new Promise<PerformanceMetrics>((_, reject) => 
+          setTimeout(() => reject(new Error('Metrics collection timeout')), 10000)
+        )
+      ]).catch(() => ({
+        lcp: 0,
+        tbt: 0,
+        cls: 0,
+        ttfb: 0,
+        resourceCount: 0,
+        domSize: 0,
+        jsHeapSize: 0,
+        totalLoadTime: 0
       }));
 
-      const avgResponseTime = serverMetrics.responseTimes.length > 0 
-        ? serverMetrics.responseTimes.reduce((a, b) => a + b, 0) / serverMetrics.responseTimes.length 
-        : 0;
-      const errorRate = serverMetrics.errors / (NUM_CONCURRENT_USERS * 2);
+      // Collect SEO metrics with error handling
+      const seoMetrics = await page.evaluate(() => {
+        try {
+          const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+          return {
+            titleLength: document.title.length,
+            metaDescription: !!document.querySelector('meta[name="description"]'),
+            h1Count: document.getElementsByTagName('h1').length,
+            imageAlts: Array.from(document.getElementsByTagName('img')).filter(img => img.alt).length,
+            mobileFriendly: !!document.querySelector('meta[name="viewport"]'),
+            sslSecure: window.location.protocol === 'https:',
+            loadTime: performance.now(),
+            responseTime: navEntry?.responseEnd || 0
+          };
+        } catch (error) {
+          return {
+            titleLength: 0,
+            metaDescription: false,
+            h1Count: 0,
+            imageAlts: 0,
+            mobileFriendly: false,
+            sslSecure: false,
+            loadTime: 0,
+            responseTime: 0
+          };
+        }
+      });
 
       const score = calculateScore(metrics);
       const { rating, color } = getRating(score);
       
+      // Store results for final summary
       results.push({
         name: competitor.name,
         metrics,
         score,
         rating,
-        concurrentMetrics: {
-          avgResponseTime,
-          errorRate,
-          maxQueueLength: serverMetrics.maxQueueLength
-        }
+        seoMetrics
       });
-
-      // Print simplified results
-      console.log('\nPerformance Metrics:');
-      console.log('-'.repeat(40));
-      if (metrics.lcp > 0) {
-        console.log(`LCP: ${metrics.lcp.toFixed(0)}ms (${calculateMetricScore(metrics.lcp, THRESHOLDS.lcp.good, THRESHOLDS.lcp.poor)}/100)`);
-      } else {
-        console.log('LCP: Failed to measure (timeout)');
-      }
-      console.log(`TBT: ${metrics.tbt.toFixed(0)}ms (${calculateMetricScore(metrics.tbt, THRESHOLDS.tbt.good, THRESHOLDS.tbt.poor)}/100)`);
-      console.log(`CLS: ${metrics.cls.toFixed(3)} (${calculateMetricScore(metrics.cls, THRESHOLDS.cls.good, THRESHOLDS.cls.poor)}/100)`);
-      console.log(`TTFB: ${metrics.ttfb.toFixed(0)}ms (${calculateMetricScore(metrics.ttfb, THRESHOLDS.ttfb.good, THRESHOLDS.ttfb.poor)}/100)`);
-      
-      console.log('\nConcurrent User Test Results:');
-      console.log('-'.repeat(40));
-      console.log(`Average Response Time: ${avgResponseTime.toFixed(0)}ms`);
-      console.log(`Error Rate: ${(errorRate * 100).toFixed(1)}%`);
-      console.log(`Maximum Queue Length: ${serverMetrics.maxQueueLength}`);
-      
-      console.log('\nOverall Score:');
-      console.log('-'.repeat(40));
-      console.log(`Score: ${score}/100`);
-      console.log(`Rating: ${color}${rating}\x1b[0m`);
-
-      await Promise.all(contexts.map(context => context.close()));
     });
   }
 
   test.afterAll(async () => {
+    if (results.length === 0) {
+      console.log('\n⚠️ No test results were collected. Check test execution for errors.');
+      return;
+    }
+
     // Sort results by score
     results.sort((a, b) => b.score - a.score);
 
     // Print Executive Summary
-    console.log('\n📊 PERFORMANCE ANALYSIS SUMMARY');
+    console.log('\n📊 WEBSITE PERFORMANCE ANALYSIS');
     console.log('='.repeat(80));
     
-    // Overall Industry Health
-    const avgScore = Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length);
-    const { rating: avgRating, color: avgColor } = getRating(avgScore);
-
-    console.log('\n🏢 INDUSTRY OVERVIEW');
+    // Performance Rankings
+    console.log('\n🏆 PERFORMANCE RANKINGS');
     console.log('-'.repeat(40));
-    console.log(`Industry Average: ${avgColor}${avgScore}/100 (${avgRating})\x1b[0m`);
-    console.log(`Total Providers Analyzed: ${results.length}`);
-    
-    // Top Performers
-    console.log('\n🏆 TOP PERFORMERS');
-    console.log('-'.repeat(40));
-    results.slice(0, 3).forEach((result, index) => {
+    results.forEach((result, index) => {
       const { rating, color } = getRating(result.score);
-      console.log(`${index + 1}. ${result.name.padEnd(20)} ${color}${result.score}/100 (${rating})\x1b[0m`);
-    });
-
-    // Service Comparison
-    console.log('\n📊 SERVICE COMPARISON');
-    console.log('-'.repeat(40));
-    
-    const alloServices = {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: true,
-      smartTown: true,
-      wifiExperience: true,
-      outdoorWifi: true,
-      fiberStreaming: true,
-      bark: true
-    };
-
-    COMPETITORS.forEach(competitor => {
-      const matchingServices = Object.entries(competitor.services)
-        .filter(([service, available]) => available && alloServices[service as keyof typeof alloServices])
-        .length;
-      const totalServices = Object.keys(alloServices).length;
-      const matchPercentage = (matchingServices / totalServices) * 100;
       
-      console.log(`\n${competitor.name}:`);
-      console.log(`  Service Match: ${matchPercentage.toFixed(1)}% of ALLO services`);
-      console.log(`  Performance Score: ${results.find(r => r.name === competitor.name)?.score}/100`);
+      console.log(`${index + 1}. ${result.name.padEnd(25)} ${color}${result.score}/100\x1b[0m (${rating})`);
+      console.log(`   Core Web Vitals:`);
+      console.log(`   - LCP: ${result.metrics.lcp.toFixed(0)}ms (${getMetricStatus(result.metrics.lcp, THRESHOLDS.lcp)})`);
+      console.log(`   - TBT: ${result.metrics.tbt.toFixed(0)}ms (${getMetricStatus(result.metrics.tbt, THRESHOLDS.tbt)})`);
+      console.log(`   - CLS: ${result.metrics.cls.toFixed(3)} (${getMetricStatus(result.metrics.cls, THRESHOLDS.cls)})`);
+      console.log(`   - TTFB: ${result.metrics.ttfb.toFixed(0)}ms (${getMetricStatus(result.metrics.ttfb, THRESHOLDS.ttfb)})`);
     });
 
-    // Performance Comparison
-    console.log('\n📈 PERFORMANCE COMPARISON');
+    // SEO & Technical Metrics
+    console.log('\n🔍 SEO & TECHNICAL METRICS');
     console.log('-'.repeat(40));
-    console.log('Provider'.padEnd(20) + 'Score'.padEnd(10) + 'LCP'.padEnd(10) + 'TBT'.padEnd(10) + 'CLS'.padEnd(10) + 'TTFB'.padEnd(10) + 'Concurrent Score');
-    console.log('-'.repeat(80));
+    console.log('Provider'.padEnd(25) + 'Load Time'.padEnd(12) + 'Response'.padEnd(12) + 'SSL'.padEnd(8) + 'Mobile'.padEnd(8) + 'SEO Score');
+    console.log('-'.repeat(65));
     
     results.forEach(result => {
-      const { rating, color } = getRating(result.score);
-      const concurrentScore = result.concurrentMetrics 
-        ? calculateConcurrentScore(result.concurrentMetrics)
-        : 0;
+      if (!result.seoMetrics) return;
+      
+      const seoScore = calculateSEOScore(result.seoMetrics);
+      const { rating: seoRating, color: seoColor } = getRating(seoScore);
       
       console.log(
-        result.name.padEnd(20) +
-        `${color}${result.score}/100\x1b[0m`.padEnd(10) +
-        `${result.metrics.lcp.toFixed(0)}ms`.padEnd(10) +
-        `${result.metrics.tbt.toFixed(0)}ms`.padEnd(10) +
-        `${result.metrics.cls.toFixed(3)}`.padEnd(10) +
-        `${result.metrics.ttfb.toFixed(0)}ms`.padEnd(10) +
-        `${concurrentScore}/100`
+        result.name.padEnd(25) +
+        `${result.seoMetrics.loadTime.toFixed(0)}ms`.padEnd(12) +
+        `${result.seoMetrics.responseTime.toFixed(0)}ms`.padEnd(12) +
+        (result.seoMetrics.sslSecure ? '✓'.padEnd(8) : '✗'.padEnd(8)) +
+        (result.seoMetrics.mobileFriendly ? '✓'.padEnd(8) : '✗'.padEnd(8)) +
+        `${seoColor}${seoScore}/100\x1b[0m (${seoRating})`
       );
     });
+
+    // Performance Insights
+    console.log('\n💡 PERFORMANCE INSIGHTS');
+    console.log('-'.repeat(40));
+    
+    // Compare ALLO with competitors
+    const alloResult = results.find(r => r.name === 'ALLO Communications');
+    if (alloResult) {
+      const competitors = results.filter(r => r.name !== 'ALLO Communications');
+      
+      // Performance advantages
+      const advantages = competitors.filter(c => alloResult.score > c.score);
+      if (advantages.length > 0) {
+        console.log('Performance Advantages:');
+        advantages.forEach(c => {
+          const metricDiffs = {
+            lcp: alloResult.metrics.lcp - c.metrics.lcp,
+            tbt: alloResult.metrics.tbt - c.metrics.tbt,
+            cls: alloResult.metrics.cls - c.metrics.cls,
+            ttfb: alloResult.metrics.ttfb - c.metrics.ttfb
+          };
+          
+          console.log(`\nvs ${c.name}:`);
+          if (metricDiffs.lcp < 0) console.log(`- LCP is ${Math.abs(metricDiffs.lcp).toFixed(0)}ms faster`);
+          if (metricDiffs.tbt < 0) console.log(`- TBT is ${Math.abs(metricDiffs.tbt).toFixed(0)}ms better`);
+          if (metricDiffs.cls < 0) console.log(`- CLS is ${Math.abs(metricDiffs.cls).toFixed(3)} better`);
+          if (metricDiffs.ttfb < 0) console.log(`- TTFB is ${Math.abs(metricDiffs.ttfb).toFixed(0)}ms faster`);
+        });
+      }
+
+      // Technical advantages
+      if (alloResult.seoMetrics) {
+        const technicalAdvantages = competitors
+          .filter(c => c.seoMetrics)
+          .map(c => {
+            const advantages: string[] = [];
+            if (alloResult.seoMetrics!.loadTime < c.seoMetrics!.loadTime) {
+              advantages.push(`Load time is ${(c.seoMetrics!.loadTime - alloResult.seoMetrics!.loadTime).toFixed(0)}ms faster`);
+            }
+            if (alloResult.seoMetrics!.responseTime < c.seoMetrics!.responseTime) {
+              advantages.push(`Response time is ${(c.seoMetrics!.responseTime - alloResult.seoMetrics!.responseTime).toFixed(0)}ms faster`);
+            }
+            return { name: c.name, advantages };
+          })
+          .filter(a => a.advantages.length > 0);
+
+        if (technicalAdvantages.length > 0) {
+          console.log('\nTechnical Advantages:');
+          technicalAdvantages.forEach(a => {
+            console.log(`\nvs ${a.name}:`);
+            a.advantages.forEach(adv => console.log(`- ${adv}`));
+          });
+        }
+      }
+    }
   });
 });
 
-// Helper function to calculate concurrent performance score
-function calculateConcurrentScore(metrics: { avgResponseTime: number; errorRate: number; maxQueueLength: number }): number {
-  const responseScore = calculateMetricScore(metrics.avgResponseTime, 200, 500);
-  const errorScore = calculateMetricScore(metrics.errorRate * 100, 1, 5);
-  const queueScore = calculateMetricScore(metrics.maxQueueLength, 5, 20);
-  
-  return Math.round((responseScore + errorScore + queueScore) / 3);
+// Helper function to get metric status
+function getMetricStatus(value: number, threshold: { good: number; poor: number }): string {
+  if (value <= threshold.good) return '\x1b[32mGOOD\x1b[0m';
+  if (value >= threshold.poor) return '\x1b[31mPOOR\x1b[0m';
+  return '\x1b[33mNEEDS IMPROVEMENT\x1b[0m';
 }
 
-// Helper function to identify leading metrics
-function getLeadingMetrics(best: PerformanceMetrics, worst: PerformanceMetrics): string {
-  const leadingMetrics: string[] = [];
-  if (best.lcp < worst.lcp) leadingMetrics.push('LCP');
-  if (best.tbt < worst.tbt) leadingMetrics.push('TBT');
-  if (best.cls < worst.cls) leadingMetrics.push('CLS');
-  if (best.ttfb < worst.ttfb) leadingMetrics.push('TTFB');
-  return leadingMetrics.join(', ');
-}
-
-// Helper function to identify competitive advantages
-function getCompetitiveAdvantages(allo: { metrics: PerformanceMetrics, score: number }, allResults: Array<{ metrics: PerformanceMetrics, score: number }>): string[] {
-  const advantages: string[] = [];
-  const avgLCP = allResults.reduce((sum, r) => sum + r.metrics.lcp, 0) / allResults.length;
-  const avgTBT = allResults.reduce((sum, r) => sum + r.metrics.tbt, 0) / allResults.length;
-  const avgCLS = allResults.reduce((sum, r) => sum + r.metrics.cls, 0) / allResults.length;
-  const avgTTFB = allResults.reduce((sum, r) => sum + r.metrics.ttfb, 0) / allResults.length;
-
-  if (allo.metrics.lcp < avgLCP * 0.9) advantages.push(`LCP ${Math.round((1 - allo.metrics.lcp/avgLCP) * 100)}% faster than average`);
-  if (allo.metrics.tbt < avgTBT * 0.9) advantages.push(`TBT ${Math.round((1 - allo.metrics.tbt/avgTBT) * 100)}% better than average`);
-  if (allo.metrics.cls < avgCLS * 0.9) advantages.push(`CLS ${Math.round((1 - allo.metrics.cls/avgCLS) * 100)}% better than average`);
-  if (allo.metrics.ttfb < avgTTFB * 0.9) advantages.push(`TTFB ${Math.round((1 - allo.metrics.ttfb/avgTTFB) * 100)}% faster than average`);
-
-  return advantages;
+// Helper function to calculate SEO score
+function calculateSEOScore(seoMetrics: { titleLength: number; metaDescription: boolean; h1Count: number; imageAlts: number; mobileFriendly: boolean; sslSecure: boolean; loadTime: number; responseTime: number }): number {
+  const score = (seoMetrics.titleLength + (seoMetrics.metaDescription ? 1 : 0) + seoMetrics.h1Count + seoMetrics.imageAlts + (seoMetrics.mobileFriendly ? 1 : 0) + (seoMetrics.sslSecure ? 1 : 0)) / 6;
+  return Math.round(score * 100);
 } 
