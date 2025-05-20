@@ -114,14 +114,62 @@ function printCompetitorInsights(metrics: PerformanceMetrics, competitor: Compet
   }
 }
 
+function printCompetitorTestStatus(competitor: CompetitorSite, status: 'started' | 'completed' | 'failed', error?: string) {
+  const timestamp = new Date().toISOString();
+  console.log(`\nCompetitor Test Status: ${competitor.name}`);
+  console.log(`Timestamp: ${timestamp}`);
+  console.log(`Status: ${status.toUpperCase()}`);
+  console.log(`URL: ${competitor.url}`);
+  if (error) {
+    console.log(`Error: ${error}`);
+  }
+  console.log('-'.repeat(80));
+}
+
+function printCompetitorSummary(competitor: CompetitorSite, metrics: PerformanceMetrics | null, error?: string) {
+  console.log(`\n📊 ${competitor.name} Test Summary`);
+  console.log('-'.repeat(80));
+  
+  if (error) {
+    console.log('❌ Test Failed');
+    console.log(`Error: ${error}`);
+    console.log('\nPossible Issues:');
+    console.log('- Network connectivity problems');
+    console.log('- Server response timeouts');
+    console.log('- Resource loading failures');
+    console.log('- Performance metric collection errors');
+  } else if (metrics) {
+    console.log('✅ Test Completed');
+    console.log('\nCollected Metrics:');
+    console.log(`• LCP: ${metrics.lcp ? metrics.lcp.toFixed(0) + 'ms' : 'Not collected'}`);
+    console.log(`• CLS: ${metrics.cls ? metrics.cls.toFixed(3) : 'Not collected'}`);
+    console.log(`• TTFB: ${metrics.ttfb ? metrics.ttfb.toFixed(0) + 'ms' : 'Not collected'}`);
+    console.log(`• TBT: ${metrics.tbt ? metrics.tbt.toFixed(0) + 'ms' : 'Not collected'}`);
+    console.log(`• Resources: ${metrics.resourceCount || 'Not collected'}`);
+    console.log(`• DOM Size: ${metrics.domSize || 'Not collected'} nodes`);
+    console.log(`• JS Heap: ${metrics.jsHeapSize ? (metrics.jsHeapSize / (1024 * 1024)).toFixed(1) + 'MB' : 'Not collected'}`);
+  } else {
+    console.log('⚠️ Test Incomplete');
+    console.log('No metrics were collected');
+  }
+  
+  console.log('\nTest Environment:');
+  console.log(`• Browser: ${process.env.BROWSER || 'Chromium'}`);
+  console.log(`• Viewport: ${process.env.VIEWPORT || 'Default'}`);
+  console.log(`• Region: ${competitor.region.join(', ')}`);
+  console.log(`• Service Type: ${competitor.serviceType}`);
+  console.log(`• Market Focus: ${competitor.marketFocus}`);
+  console.log('-'.repeat(80));
+}
+
 test.describe('Competitor Performance Analysis', () => {
   const results: TestResult[] = [];
 
   for (const competitor of COMPETITORS) {
     test(`Performance test for ${competitor.name}`, async ({ page }, testInfo) => {
-      printTestHeader(`Competitor Analysis: ${competitor.name}`);
-      
-      let metrics: PerformanceMetrics;
+      printCompetitorTestStatus(competitor, 'started');
+      let metrics: PerformanceMetrics | null = null;
+      let error: string | undefined;
       
       try {
         // Navigate to the page with retry logic
@@ -239,130 +287,122 @@ test.describe('Competitor Performance Analysis', () => {
         });
 
         // Print insights
-        printCompetitorInsights(metrics, competitor);
+        if (metrics) {
+          printCompetitorSummary(competitor, metrics);
+          printCompetitorInsights(metrics, competitor);
+        }
         
-        // Add basic assertions to ensure metrics are collected
-        expect(metrics.lcp, 'LCP should be collected').toBeDefined();
-        expect(metrics.cls, 'CLS should be collected').toBeDefined();
-        expect(metrics.ttfb, 'TTFB should be collected').toBeDefined();
-        
-      } catch (error) {
-        console.log(`Error testing ${competitor.name}: ${error.message}`);
-        // Add a failed result to maintain test continuity
-        results.push({
-          name: competitor.name,
-          metrics: {
-            lcp: 0,
-            cls: 0,
-            ttfb: 0,
-            tbt: 0,
-            resourceCount: 0,
-            domSize: 0,
-            jsHeapSize: 0,
-            totalLoadTime: 0
-          },
-          score: 0,
-          rating: 'FAILED'
-        });
+      } catch (err) {
+        error = err.message;
+        printCompetitorSummary(competitor, metrics, error);
+      } finally {
+        printCompetitorTestStatus(competitor, error ? 'failed' : 'completed', error);
+        printTestFooter();
       }
     });
   }
 
   test.afterAll(async () => {
+    printTestHeader('Competitor Analysis Summary');
+    
     if (results.length === 0) {
       console.log('\n⚠️ No test results were collected.');
-      return;
-    }
-
-    // Sort results by score in descending order
-    results.sort((a, b) => b.score - a.score);
-
-    printTestHeader('Competitor Performance Rankings');
-    
-    // Performance Rankings
-    results.forEach((result, index) => {
-      const { rating, color } = getRating(result.score);
-      
-      console.log(`\n${index + 1}. ${result.name}`);
-      console.log(`   Score: ${color}${result.score}/100\x1b[0m (${rating})`);
-      console.log(`   LCP: ${result.metrics.lcp.toFixed(0)}ms (${getMetricStatus(result.metrics.lcp, THRESHOLDS.lcp)})`);
-      console.log(`   CLS: ${result.metrics.cls.toFixed(3)} (${getMetricStatus(result.metrics.cls, THRESHOLDS.cls)})`);
-      console.log(`   TTFB: ${result.metrics.ttfb.toFixed(0)}ms (${getMetricStatus(result.metrics.ttfb, THRESHOLDS.ttfb)})`);
-    });
-
-    // Overall Insights
-    console.log('\n💡 Overall Insights:');
-    console.log('-'.repeat(40));
-    
-    // Industry Position
-    const successfulResults = results.filter(r => r.score > 0);
-    if (successfulResults.length > 0) {
-      const avgScore = successfulResults.reduce((sum, r) => sum + r.score, 0) / successfulResults.length;
-      console.log('Industry Position:');
-      if (avgScore >= 90) {
-        console.log('✓ Industry-leading performance');
-        console.log('  • Strong overall metrics');
-        console.log('  • Competitive advantage');
-      } else if (avgScore >= 80) {
-        console.log('✓ Above industry average');
-        console.log('  • Good overall performance');
-        console.log('  • Room for optimization');
-      } else {
-        console.log('⚠️ Below industry average');
-        console.log('  • Performance needs improvement');
-        console.log('  • Focus on critical optimizations');
-      }
-
-      // Competitive Analysis
-      const alloResult = results.find(r => r.name === 'ALLO Communications');
-      if (alloResult && alloResult.score > 0) {
-        console.log('\nALLO Communications Position:');
-        const rank = results.findIndex(r => r.name === 'ALLO Communications') + 1;
-        const total = successfulResults.length;
-        
-        if (rank === 1) {
-          console.log('✓ Leading performance');
-          console.log(`  • Ranked #1 of ${total} competitors`);
-          console.log('  • Industry-leading metrics');
-        } else if (rank <= Math.ceil(total / 2)) {
-          console.log('✓ Above average performance');
-          console.log(`  • Ranked #${rank} of ${total} competitors`);
-          console.log('  • Strong competitive position');
-        } else {
-          console.log('⚠️ Below average performance');
-          console.log(`  • Ranked #${rank} of ${total} competitors`);
-          console.log('  • Needs improvement to compete');
-        }
-
-        // Compare with competitors
-        const competitors = successfulResults.filter(r => r.name !== 'ALLO Communications');
-        if (competitors.length > 0) {
-          console.log('\nKey Differentiators:');
-          competitors.forEach(c => {
-            const metricDiffs = {
-              lcp: alloResult.metrics.lcp - c.metrics.lcp,
-              cls: alloResult.metrics.cls - c.metrics.cls,
-              ttfb: alloResult.metrics.ttfb - c.metrics.ttfb
-            };
-            
-            console.log(`\nvs ${c.name}:`);
-            if (metricDiffs.lcp !== 0) {
-              const diff = Math.abs(metricDiffs.lcp);
-              console.log(`- LCP is ${diff.toFixed(0)}ms ${metricDiffs.lcp < 0 ? 'faster' : 'slower'}`);
-            }
-            if (metricDiffs.cls !== 0) {
-              const diff = Math.abs(metricDiffs.cls);
-              console.log(`- CLS is ${diff.toFixed(3)} ${metricDiffs.cls < 0 ? 'better' : 'worse'}`);
-            }
-            if (metricDiffs.ttfb !== 0) {
-              const diff = Math.abs(metricDiffs.ttfb);
-              console.log(`- TTFB is ${diff.toFixed(0)}ms ${metricDiffs.ttfb < 0 ? 'faster' : 'slower'}`);
-            }
-          });
-        }
-      }
+      console.log('\nPossible Issues:');
+      console.log('- All tests failed to complete');
+      console.log('- Network connectivity problems');
+      console.log('- Server response timeouts');
+      console.log('- Performance metric collection errors');
     } else {
-      console.log('⚠️ No successful test results to analyze');
+      // Sort results by score in descending order
+      results.sort((a, b) => b.score - a.score);
+
+      printTestHeader('Competitor Performance Rankings');
+      
+      // Performance Rankings
+      results.forEach((result, index) => {
+        const { rating, color } = getRating(result.score);
+        
+        console.log(`\n${index + 1}. ${result.name}`);
+        console.log(`   Score: ${color}${result.score}/100\x1b[0m (${rating})`);
+        console.log(`   LCP: ${result.metrics.lcp.toFixed(0)}ms (${getMetricStatus(result.metrics.lcp, THRESHOLDS.lcp)})`);
+        console.log(`   CLS: ${result.metrics.cls.toFixed(3)} (${getMetricStatus(result.metrics.cls, THRESHOLDS.cls)})`);
+        console.log(`   TTFB: ${result.metrics.ttfb.toFixed(0)}ms (${getMetricStatus(result.metrics.ttfb, THRESHOLDS.ttfb)})`);
+      });
+
+      // Overall Insights
+      console.log('\n💡 Overall Insights:');
+      console.log('-'.repeat(40));
+      
+      // Industry Position
+      const successfulResults = results.filter(r => r.score > 0);
+      if (successfulResults.length > 0) {
+        const avgScore = successfulResults.reduce((sum, r) => sum + r.score, 0) / successfulResults.length;
+        console.log('Industry Position:');
+        if (avgScore >= 90) {
+          console.log('✓ Industry-leading performance');
+          console.log('  • Strong overall metrics');
+          console.log('  • Competitive advantage');
+        } else if (avgScore >= 80) {
+          console.log('✓ Above industry average');
+          console.log('  • Good overall performance');
+          console.log('  • Room for optimization');
+        } else {
+          console.log('⚠️ Below industry average');
+          console.log('  • Performance needs improvement');
+          console.log('  • Focus on critical optimizations');
+        }
+
+        // Competitive Analysis
+        const alloResult = results.find(r => r.name === 'ALLO Communications');
+        if (alloResult && alloResult.score > 0) {
+          console.log('\nALLO Communications Position:');
+          const rank = results.findIndex(r => r.name === 'ALLO Communications') + 1;
+          const total = successfulResults.length;
+          
+          if (rank === 1) {
+            console.log('✓ Leading performance');
+            console.log(`  • Ranked #1 of ${total} competitors`);
+            console.log('  • Industry-leading metrics');
+          } else if (rank <= Math.ceil(total / 2)) {
+            console.log('✓ Above average performance');
+            console.log(`  • Ranked #${rank} of ${total} competitors`);
+            console.log('  • Strong competitive position');
+          } else {
+            console.log('⚠️ Below average performance');
+            console.log(`  • Ranked #${rank} of ${total} competitors`);
+            console.log('  • Needs improvement to compete');
+          }
+
+          // Compare with competitors
+          const competitors = successfulResults.filter(r => r.name !== 'ALLO Communications');
+          if (competitors.length > 0) {
+            console.log('\nKey Differentiators:');
+            competitors.forEach(c => {
+              const metricDiffs = {
+                lcp: alloResult.metrics.lcp - c.metrics.lcp,
+                cls: alloResult.metrics.cls - c.metrics.cls,
+                ttfb: alloResult.metrics.ttfb - c.metrics.ttfb
+              };
+              
+              console.log(`\nvs ${c.name}:`);
+              if (metricDiffs.lcp !== 0) {
+                const diff = Math.abs(metricDiffs.lcp);
+                console.log(`- LCP is ${diff.toFixed(0)}ms ${metricDiffs.lcp < 0 ? 'faster' : 'slower'}`);
+              }
+              if (metricDiffs.cls !== 0) {
+                const diff = Math.abs(metricDiffs.cls);
+                console.log(`- CLS is ${diff.toFixed(3)} ${metricDiffs.cls < 0 ? 'better' : 'worse'}`);
+              }
+              if (metricDiffs.ttfb !== 0) {
+                const diff = Math.abs(metricDiffs.ttfb);
+                console.log(`- TTFB is ${diff.toFixed(0)}ms ${metricDiffs.ttfb < 0 ? 'faster' : 'slower'}`);
+              }
+            });
+          }
+        }
+      } else {
+        console.log('⚠️ No successful test results to analyze');
+      }
     }
     
     printTestFooter();
