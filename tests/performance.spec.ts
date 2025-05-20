@@ -743,73 +743,115 @@ test.describe('Performance Tests', () => {
       
       const contexts: BrowserContext[] = [];
       const pages: Page[] = [];
-      const results = await Promise.all(
-        Array(numUsers).fill(null).map(async () => {
-          const context = await browser.newContext(testInfo.project.use);
-          contexts.push(context);
-          const page = await context.newPage();
-          pages.push(page);
-          const startTime = Date.now();
-          
-          try {
-            await page.goto(url);
-            const loadTime = Date.now() - startTime;
-            return { loadTime, error: null };
-          } catch (error) {
-            return { loadTime: 0, error };
+      const results: Array<{ loadTime: number; error: any; resourceContention?: number }> = [];
+      
+      try {
+        // Create contexts and pages
+        await test.step('Setup concurrent users', async () => {
+          for (let i = 0; i < numUsers; i++) {
+            const context = await browser.newContext(testInfo.project.use);
+            contexts.push(context);
+            const page = await context.newPage();
+            pages.push(page);
           }
-        })
-      );
-      
-      // Clean up contexts
-      await Promise.all(contexts.map(c => c.close()));
-      
-      const successfulLoads = results.filter(r => !r.error);
-      const avgLoadTime = successfulLoads.reduce((sum, r) => sum + r.loadTime, 0) / successfulLoads.length;
-      const errorRate = (numUsers - successfulLoads.length) / numUsers;
-      
-      // Use the first page for resource contention analysis
-      const resourceContention = await pages[0]?.evaluate(() => {
-        const entries = performance.getEntriesByType('resource');
-        const concurrentRequests = entries.reduce((max, entry) => {
-          const start = entry.startTime;
-          const end = start + entry.duration;
-          return Math.max(max, entries.filter(e => 
-            e.startTime <= end && (e.startTime + e.duration) >= start
-          ).length);
-        }, 0);
-        return concurrentRequests / entries.length;
-      }) || 0;
-      
-      metrics = {
-        avgLoadTime,
-        errorRate,
-        resourceContention
-      };
+        });
 
-      printTestSummary(testInfo, 'Concurrent Users', metrics);
-      printTestInsights(metrics, 'concurrent');
-      
-      await test.step('Print test summary', async () => {
-        const output = [
-          '\n📊 Concurrent Users Performance Summary',
-          '-'.repeat(80),
-          '✅ Test Completed',
-          '\nCollected Metrics:',
-          `• Average Load Time: ${metrics.avgLoadTime.toFixed(0)}ms`,
-          `• Error Rate: ${(metrics.errorRate * 100).toFixed(1)}%`,
-          `• Resource Contention: ${metrics.resourceContention.toFixed(1)}%`,
-          '\nTest Environment:',
-          getEnvironmentInfo(),
-          `Concurrent Users: ${numUsers}`,
-          '-'.repeat(80)
-        ].join('\n');
-        
-        test.info().annotations.push({ type: 'test_output', description: output });
-      });
-      
-      printTestExecutionStatus(testInfo, 'Concurrent Users Performance Test', error ? 'failed' : 'completed', error);
-      printTestFooter();
+        // Navigate all pages concurrently
+        await test.step('Navigate pages', async () => {
+          const navigationPromises = pages.map(async (page, index) => {
+            const startTime = Date.now();
+            try {
+              await page.goto(url, { 
+                waitUntil: 'networkidle', 
+                timeout: 45000 // Increased timeout for concurrent load
+              });
+              
+              // Collect resource contention metrics before closing
+              const resourceContention = await page.evaluate(() => {
+                const entries = performance.getEntriesByType('resource');
+                const concurrentRequests = entries.reduce((max, entry) => {
+                  const start = entry.startTime;
+                  const end = start + entry.duration;
+                  return Math.max(max, entries.filter(e => 
+                    e.startTime <= end && (e.startTime + e.duration) >= start
+                  ).length);
+                }, 0);
+                return concurrentRequests / entries.length;
+              });
+
+              return { 
+                loadTime: Date.now() - startTime, 
+                error: null,
+                resourceContention 
+              };
+            } catch (err) {
+              return { 
+                loadTime: 0, 
+                error: err,
+                resourceContention: 0
+              };
+            }
+          });
+
+          const navigationResults = await Promise.all(navigationPromises);
+          results.push(...navigationResults);
+        });
+
+        // Calculate metrics
+        await test.step('Calculate metrics', async () => {
+          const successfulLoads = results.filter(r => !r.error);
+          const avgLoadTime = successfulLoads.length > 0 
+            ? successfulLoads.reduce((sum, r) => sum + r.loadTime, 0) / successfulLoads.length 
+            : 0;
+          const errorRate = (numUsers - successfulLoads.length) / numUsers;
+          const avgResourceContention = successfulLoads.length > 0
+            ? successfulLoads.reduce((sum, r) => sum + (r.resourceContention || 0), 0) / successfulLoads.length
+            : 0;
+
+          metrics = {
+            avgLoadTime,
+            errorRate,
+            resourceContention: avgResourceContention
+          };
+
+          test.info().annotations.push(
+            { type: 'metric', description: `Average Load Time: ${metrics.avgLoadTime.toFixed(0)}ms` },
+            { type: 'metric', description: `Error Rate: ${(metrics.errorRate * 100).toFixed(1)}%` },
+            { type: 'metric', description: `Resource Contention: ${metrics.resourceContention.toFixed(1)}%` }
+          );
+        });
+
+      } catch (err) {
+        error = err.message;
+        await test.step('Handle test failure', async () => {
+          const output = [
+            '\n❌ Concurrent Users Performance Test Failed',
+            '-'.repeat(80),
+            `Error: ${error}`,
+            '\nPossible Issues:',
+            '- Server capacity exceeded',
+            '- Network connectivity issues',
+            '- Resource contention',
+            '- Browser performance limitations',
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
+        });
+      } finally {
+        await test.step('Cleanup', async () => {
+          // Close contexts in parallel
+          await Promise.allSettled(contexts.map(c => c.close().catch(() => {})));
+          
+          const status = error ? 'failed' : 'completed';
+          test.info().annotations.push({ 
+            type: 'test_status', 
+            description: `Concurrent Users Performance Test - ${status}` 
+          });
+        });
+      }
     });
 
     test('Performance under memory pressure', async ({ browser }, testInfo) => {

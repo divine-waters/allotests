@@ -222,83 +222,120 @@ test.describe('Competitor Performance Analysis', () => {
       let metrics: any = {};
       let error: string | undefined;
       let context: BrowserContext | null = null;
+      let page: Page | null = null;
       
       try {
         await test.step('Setup browser context', async () => {
-          context = await browser.newContext();
-          const page = await context.newPage();
+          context = await browser.newContext({
+            ...testInfo.project.use,
+            // Add performance monitoring
+            recordVideo: { dir: 'test-results/videos' },
+            recordHar: { path: 'test-results/hars/' + competitor.name.toLowerCase().replace(/\s+/g, '-') + '.har' }
+          });
+          
+          page = await context.newPage();
+          
+          // Set default timeout
+          page.setDefaultTimeout(45000); // Increased timeout
+          page.setDefaultNavigationTimeout(45000);
+          
+          // Add error handling for page crashes
+          page.on('crash', () => {
+            throw new Error('Page crashed during test execution');
+          });
+          
+          // Add error handling for console errors
+          page.on('console', msg => {
+            if (msg.type() === 'error') {
+              console.log(`Page error: ${msg.text()}`);
+            }
+          });
+        });
+
+        await test.step('Navigate and collect metrics', async () => {
+          if (!page) throw new Error('Page not initialized');
           
           // Navigate with retry logic
           let retryCount = 0;
           const maxRetries = 3;
+          let lastError: Error | undefined;
           
           while (retryCount < maxRetries) {
             try {
-              await page.goto(competitor.url, { waitUntil: 'networkidle', timeout: 30000 });
-              break;
+              await page.goto(competitor.url, { 
+                waitUntil: 'networkidle',
+                timeout: 45000 // Increased timeout
+              });
+              
+              // Wait for network to be idle
+              await page.waitForLoadState('networkidle', { timeout: 10000 });
+              
+              // Collect metrics
+              metrics = await page.evaluate(() => {
+                const memory = (performance as any).memory;
+                const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+                return {
+                  lcp: performance.getEntriesByType('largest-contentful-paint')[0]?.startTime || 0,
+                  cls: performance.getEntriesByType('layout-shift').reduce((sum, entry) => sum + (entry as any).value, 0),
+                  ttfb: navEntry?.responseStart || 0,
+                  tbt: performance.getEntriesByType('longtask').reduce((sum, task) => sum + task.duration, 0),
+                  resourceCount: performance.getEntriesByType('resource').length,
+                  domSize: document.getElementsByTagName('*').length,
+                  jsHeapSize: memory?.usedJSHeapSize || 0,
+                  totalLoadTime: navEntry?.loadEventEnd - navEntry?.startTime || 0
+                };
+              });
+
+              test.info().annotations.push(
+                { type: 'metric', description: `LCP: ${metrics.lcp}ms` },
+                { type: 'metric', description: `CLS: ${metrics.cls.toFixed(3)}` },
+                { type: 'metric', description: `TTFB: ${metrics.ttfb}ms` },
+                { type: 'metric', description: `TBT: ${metrics.tbt.toFixed(0)}ms` }
+              );
+              
+              break; // Success, exit retry loop
             } catch (err) {
+              lastError = err;
               retryCount++;
               if (retryCount === maxRetries) {
-                throw err;
+                throw new Error(`Failed to load page after ${maxRetries} attempts. Last error: ${lastError.message}`);
               }
               test.info().annotations.push({ 
                 type: 'retry', 
-                description: `Retry ${retryCount}/${maxRetries}` 
+                description: `Retry ${retryCount}/${maxRetries}: ${lastError.message}` 
               });
-              await page.waitForTimeout(2000);
+              await page.waitForTimeout(2000 * retryCount); // Exponential backoff
             }
           }
-
-          await test.step('Collect performance metrics', async () => {
-            metrics = await page.evaluate(() => {
-              const memory = (performance as any).memory;
-              const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-              return {
-                lcp: performance.getEntriesByType('largest-contentful-paint')[0]?.startTime || 0,
-                cls: performance.getEntriesByType('layout-shift').reduce((sum, entry) => sum + (entry as any).value, 0),
-                ttfb: navEntry?.responseStart || 0,
-                tbt: performance.getEntriesByType('longtask').reduce((sum, task) => sum + task.duration, 0),
-                resourceCount: performance.getEntriesByType('resource').length,
-                domSize: document.getElementsByTagName('*').length,
-                jsHeapSize: memory?.usedJSHeapSize || 0
-              };
-            });
-
-            test.info().annotations.push(
-              { type: 'metric', description: `LCP: ${metrics.lcp}ms` },
-              { type: 'metric', description: `CLS: ${metrics.cls.toFixed(3)}` },
-              { type: 'metric', description: `TTFB: ${metrics.ttfb}ms` },
-              { type: 'metric', description: `TBT: ${metrics.tbt.toFixed(0)}ms` }
-            );
-          });
-
-          await test.step('Print competitor summary', async () => {
-            const competitorInfo = COMPETITORS.find(c => c.name === competitor.name);
-            const output = [
-              `\n📊 ${competitor.name} Performance Summary`,
-              '-'.repeat(80),
-              '✅ Test Completed',
-              `Region: ${competitorInfo?.region || 'Unknown'}`,
-              `Service Type: ${competitorInfo?.serviceType || 'Unknown'}`,
-              `Market Focus: ${competitorInfo?.marketFocus || 'Unknown'}`,
-              '\nCollected Metrics:',
-              `• LCP: ${metrics.lcp}ms`,
-              `• CLS: ${metrics.cls.toFixed(3)}`,
-              `• TTFB: ${metrics.ttfb}ms`,
-              `• TBT: ${metrics.tbt.toFixed(0)}ms`,
-              `• Resource Count: ${metrics.resourceCount}`,
-              `• DOM Size: ${metrics.domSize}`,
-              `• JS Heap Size: ${(metrics.jsHeapSize / (1024 * 1024)).toFixed(2)}MB`,
-              '\nTest Environment:',
-              getEnvironmentInfo(),
-              '-'.repeat(80)
-            ].join('\n');
-            
-            test.info().annotations.push({ type: 'test_output', description: output });
-          });
-
-          results.push({ competitor: competitor.name, metrics });
         });
+
+        await test.step('Print competitor summary', async () => {
+          const competitorInfo = COMPETITORS.find(c => c.name === competitor.name);
+          const output = [
+            `\n📊 ${competitor.name} Performance Summary`,
+            '-'.repeat(80),
+            '✅ Test Completed',
+            `Region: ${competitorInfo?.region || 'Unknown'}`,
+            `Service Type: ${competitorInfo?.serviceType || 'Unknown'}`,
+            `Market Focus: ${competitorInfo?.marketFocus || 'Unknown'}`,
+            '\nCollected Metrics:',
+            `• LCP: ${metrics.lcp}ms`,
+            `• CLS: ${metrics.cls.toFixed(3)}`,
+            `• TTFB: ${metrics.ttfb}ms`,
+            `• TBT: ${metrics.tbt.toFixed(0)}ms`,
+            `• Resource Count: ${metrics.resourceCount}`,
+            `• DOM Size: ${metrics.domSize}`,
+            `• JS Heap Size: ${(metrics.jsHeapSize / (1024 * 1024)).toFixed(2)}MB`,
+            `• Total Load Time: ${metrics.totalLoadTime}ms`,
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
+        });
+
+        results.push({ competitor: competitor.name, metrics });
         
       } catch (err) {
         error = err.message;
@@ -321,18 +358,18 @@ test.describe('Competitor Performance Analysis', () => {
           results.push({ competitor: competitor.name, metrics, error });
         });
       } finally {
-        await test.step('Finalize test', async () => {
-          if (context) {
-            await context.close();
+        await test.step('Cleanup', async () => {
+          try {
+            if (page) await page.close().catch(() => {});
+            if (context) await context.close().catch(() => {});
+          } catch (err) {
+            console.error('Error during cleanup:', err);
           }
+          
           const status = error ? 'failed' : 'completed';
           test.info().annotations.push({ 
             type: 'test_status', 
             description: `${competitor.name} - ${status}` 
-          });
-          test.info().annotations.push({ 
-            type: 'test_output', 
-            description: `\n🧪 ${competitor.name} Analysis ${status.toUpperCase()}` 
           });
         });
       }
