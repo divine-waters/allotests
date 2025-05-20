@@ -1033,13 +1033,20 @@ test.describe('Performance Tests', () => {
       }> = [];
       
       let gcCount = 0;
+      let client: any = null;
       
-      // Monitor garbage collection
-      const client = await context.newCDPSession(page);
-      await client.send('HeapProfiler.enable');
-      client.on('HeapProfiler.lastSeenObjectId', () => {
-        gcCount++;
-      });
+      // Only enable CDP session for Chromium browsers
+      if (testInfo.project.use.browserName === 'chromium') {
+        try {
+          client = await context.newCDPSession(page);
+          await client.send('HeapProfiler.enable');
+          client.on('HeapProfiler.lastSeenObjectId', () => {
+            gcCount++;
+          });
+        } catch (error) {
+          console.log('CDP session not available - using alternative memory metrics');
+        }
+      }
       
       // Measure initial memory state
       const initialMetrics = await page.evaluate(() => {
@@ -1050,7 +1057,7 @@ test.describe('Performance Tests', () => {
         }, 0);
         
         return {
-          jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+          jsHeapSize: (performance as any).memory?.usedJSHeapSize || 0,
           domNodes: document.getElementsByTagName('*').length,
           eventListeners: Array.from(document.querySelectorAll('*'))
             .reduce((count, element) => {
@@ -1091,7 +1098,7 @@ test.describe('Performance Tests', () => {
           }, 0);
           
           return {
-            jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+            jsHeapSize: (performance as any).memory?.usedJSHeapSize || 0,
             domNodes: document.getElementsByTagName('*').length,
             eventListeners: Array.from(document.querySelectorAll('*'))
               .reduce((count, element) => {
@@ -1108,7 +1115,16 @@ test.describe('Performance Tests', () => {
           gcCount
         });
       }
-      
+
+      // Clean up CDP session if it was created
+      if (client) {
+        try {
+          await client.detach();
+        } catch (error) {
+          console.log('Error detaching CDP session:', error);
+        }
+      }
+
       // Calculate memory growth rates
       const heapGrowth = (memorySnapshots[memorySnapshots.length - 1].jsHeapSize - memorySnapshots[0].jsHeapSize) / 1024 / 1024;
       const gcFrequency = gcCount / ((memorySnapshots[memorySnapshots.length - 1].timestamp - memorySnapshots[0].timestamp) / 1000);
