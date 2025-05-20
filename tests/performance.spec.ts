@@ -140,9 +140,10 @@ function getRemediationAdvice(task: TaskInfo): TaskInfo['remediation'] {
 }
 
 test.describe('Performance Tests', () => {
-  test('Homepage Performance', async ({ page, context }) => {
-    const url = 'https://www.allocommunications.com/';
+  const url = 'https://www.allocommunications.com/';
 
+  // Original performance test
+  test('Homepage Performance', async ({ page, context }) => {
     // Enable tracing for performance metrics
     await context.tracing.start({ screenshots: true, snapshots: true });
 
@@ -393,5 +394,155 @@ test.describe('Performance Tests', () => {
       `${tbtDetails.tasks.length} blocking tasks detected. ` +
       `Longest task: ${tbtDetails.tasks[0]?.duration || 0}ms (${tbtDetails.tasks[0]?.name || 'Unknown'})`
     ).toBeLessThan(300);
+  });
+
+  // Stress test scenarios
+  test.describe('Stress Tests', () => {
+    // Test with network throttling
+    test('Performance under 3G network conditions', async ({ browser }) => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const client = await context.newCDPSession(page);
+      await client.send('Network.enable');
+      await client.send('Network.emulateNetworkConditions', {
+        offline: false,
+        downloadThroughput: (1.6 * 1024 * 1024) / 8, // 1.6 Mbps
+        uploadThroughput: (750 * 1024) / 8, // 750 Kbps
+        latency: 100 // 100ms
+      });
+
+      await context.tracing.start({ screenshots: true, snapshots: true });
+      
+      const startTime = Date.now();
+      await page.goto(url);
+      const loadTime = Date.now() - startTime;
+      
+      console.log(`\n3G Network Test Results:`);
+      console.log(`Total Load Time: ${loadTime}ms`);
+      
+      const metrics = await page.evaluate(() => ({
+        jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+        domNodes: document.getElementsByTagName('*').length,
+        resources: performance.getEntriesByType('resource').length
+      }));
+      
+      console.log(`Memory Usage: ${Math.round(metrics.jsHeapSize / 1024 / 1024)}MB`);
+      console.log(`DOM Nodes: ${metrics.domNodes}`);
+      console.log(`Total Resources: ${metrics.resources}`);
+      
+      await context.tracing.stop({ path: 'trace-3g.zip' });
+      await context.close();
+    });
+
+    // Test with CPU throttling
+    test('Performance under CPU throttling', async ({ browser }) => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.evaluate(() => {
+        // Simulate CPU throttling by running a heavy operation
+        const start = performance.now();
+        while (performance.now() - start < 100) {
+          Math.random() * Math.random();
+        }
+      });
+
+      await context.tracing.start({ screenshots: true, snapshots: true });
+      
+      const startTime = Date.now();
+      await page.goto(url);
+      const loadTime = Date.now() - startTime;
+      
+      console.log(`\nCPU Throttling Test Results:`);
+      console.log(`Total Load Time: ${loadTime}ms`);
+      
+      const metrics = await page.evaluate(() => ({
+        jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+        domNodes: document.getElementsByTagName('*').length,
+        resources: performance.getEntriesByType('resource').length
+      }));
+      
+      console.log(`Memory Usage: ${Math.round(metrics.jsHeapSize / 1024 / 1024)}MB`);
+      console.log(`DOM Nodes: ${metrics.domNodes}`);
+      console.log(`Total Resources: ${metrics.resources}`);
+      
+      await context.tracing.stop({ path: 'trace-cpu-throttle.zip' });
+      await context.close();
+    });
+
+    // Test with concurrent users
+    test('Performance under concurrent user load', async ({ browser }) => {
+      const NUM_CONCURRENT_USERS = 5;
+      const contexts = await Promise.all(
+        Array(NUM_CONCURRENT_USERS).fill(null).map(() => 
+          browser.newContext()
+        )
+      );
+      const pages = await Promise.all(
+        contexts.map(context => context.newPage())
+      );
+      
+      console.log(`\nConcurrent Users Test (${NUM_CONCURRENT_USERS} users):`);
+      
+      const results = await Promise.all(pages.map(async (page, index) => {
+        const startTime = Date.now();
+        await page.goto(url);
+        const loadTime = Date.now() - startTime;
+        
+        const metrics = await page.evaluate(() => ({
+          jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+          domNodes: document.getElementsByTagName('*').length,
+          resources: performance.getEntriesByType('resource').length
+        }));
+        
+        return {
+          user: index + 1,
+          loadTime,
+          metrics
+        };
+      }));
+      
+      results.forEach(result => {
+        console.log(`\nUser ${result.user}:`);
+        console.log(`Load Time: ${result.loadTime}ms`);
+        console.log(`Memory Usage: ${Math.round(result.metrics.jsHeapSize / 1024 / 1024)}MB`);
+        console.log(`DOM Nodes: ${result.metrics.domNodes}`);
+        console.log(`Total Resources: ${result.metrics.resources}`);
+      });
+      
+      await Promise.all(contexts.map(context => context.close()));
+    });
+
+    // Test with memory pressure
+    test('Performance under memory pressure', async ({ browser }) => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      
+      // Create memory pressure by loading multiple instances
+      const NUM_INSTANCES = 3;
+      const instances = await Promise.all(
+        Array(NUM_INSTANCES).fill(null).map(() => 
+          page.evaluate(() => {
+            const iframe = document.createElement('iframe');
+            iframe.src = window.location.href;
+            document.body.appendChild(iframe);
+            return new Promise(resolve => iframe.onload = resolve);
+          })
+        )
+      );
+      
+      await page.goto(url);
+      const metrics = await page.evaluate(() => ({
+        jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+        domNodes: document.getElementsByTagName('*').length,
+        resources: performance.getEntriesByType('resource').length
+      }));
+      
+      console.log(`\nMemory Pressure Test Results:`);
+      console.log(`Memory Usage: ${Math.round(metrics.jsHeapSize / 1024 / 1024)}MB`);
+      console.log(`DOM Nodes: ${metrics.domNodes}`);
+      console.log(`Total Resources: ${metrics.resources}`);
+      
+      await context.close();
+    });
   });
 });
