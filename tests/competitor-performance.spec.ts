@@ -186,6 +186,16 @@ function getMetricStatus(value: number, threshold: { excellent: number; good: nu
   return '\x1b[31mPOOR\x1b[0m';
 }
 
+function printTestHeader(testName: string) {
+  console.log('\n' + '='.repeat(80));
+  console.log(` 🧪 ${testName} `.padStart(40 + testName.length/2, '=').padEnd(80, '='));
+  console.log('='.repeat(80) + '\n');
+}
+
+function printTestFooter() {
+  console.log('\n' + '='.repeat(80) + '\n');
+}
+
 test.describe('Competitor Performance Analysis', () => {
   const results: Array<{
     name: string;
@@ -200,6 +210,8 @@ test.describe('Competitor Performance Analysis', () => {
 
   for (const competitor of COMPETITORS) {
     test(`Performance test for ${competitor.name}`, async ({ page }, testInfo) => {
+      printTestHeader(`Competitor Analysis: ${competitor.name}`);
+      
       // Basic Performance Test with more lenient navigation strategy
       try {
         await page.goto(competitor.url, { 
@@ -274,12 +286,10 @@ test.describe('Competitor Performance Analysis', () => {
       return;
     }
 
-    // Sort results by score
+    // Sort results by score in descending order
     results.sort((a, b) => b.score - a.score);
 
-    // Print Performance Summary
-    console.log('\n📊 PERFORMANCE SUMMARY');
-    console.log('='.repeat(60));
+    printTestHeader('Competitor Performance Rankings');
     
     // Performance Rankings
     results.forEach((result, index) => {
@@ -323,5 +333,7 @@ test.describe('Competitor Performance Analysis', () => {
         }
       });
     }
+    
+    printTestFooter();
   });
 }); 

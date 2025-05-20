@@ -384,11 +384,23 @@ function printTrend(data: Array<{ timestamp: number, value: number }>, label: st
   });
 }
 
+function printTestHeader(testName: string) {
+  console.log('\n' + '='.repeat(80));
+  console.log(` 🧪 ${testName} `.padStart(40 + testName.length/2, '=').padEnd(80, '='));
+  console.log('='.repeat(80) + '\n');
+}
+
+function printTestFooter() {
+  console.log('\n' + '='.repeat(80) + '\n');
+}
+
 test.describe('Performance Tests', () => {
-    const url = 'https://www.allocommunications.com/';
+  const url = 'https://www.allocommunications.com/';
 
   // Original performance test
   test('Homepage Performance', async ({ page, context }) => {
+    printTestHeader('Homepage Performance Test');
+    
     // Enable tracing for performance metrics
     await context.tracing.start({ screenshots: true, snapshots: true });
 
@@ -439,7 +451,8 @@ test.describe('Performance Tests', () => {
       });
     }, { timeout: 6000 });
 
-    console.log('\nLCP Diagnostic Report:');
+    // LCP Diagnostic Report
+    printTestHeader('LCP Diagnostic Report');
     console.log(`LCP Value: ${lcpDetails.lcp}ms (Threshold: 2500ms)`);
     console.log(`LCP Element: ${lcpDetails.element}`);
     console.log(`Element Size: ${Math.round(lcpDetails.size)}px²`);
@@ -587,7 +600,8 @@ test.describe('Performance Tests', () => {
       });
     }, { timeout: 6000 });
 
-    console.log('\nTBT Diagnostic Report:');
+    // TBT Diagnostic Report
+    printTestHeader('TBT Diagnostic Report');
     console.log(`Total Blocking Time: ${tbtDetails.totalTBT}ms`);
     console.log(`Threshold: 300ms (Good: 0-200ms, Needs Improvement: 200-600ms, Poor: >600ms)`);
     
@@ -639,11 +653,15 @@ test.describe('Performance Tests', () => {
       `${tbtDetails.tasks.length} blocking tasks detected. ` +
       `Longest task: ${tbtDetails.tasks[0]?.duration || 0}ms (${tbtDetails.tasks[0]?.name || 'Unknown'})`
     ).toBeLessThan(300);
+    
+    printTestFooter();
   });
 
   // Stress test scenarios
   test.describe('Stress Tests', () => {
     test('Performance under 3G network conditions', async ({ browser }, testInfo) => {
+      printTestHeader('3G Network Performance Test');
+      
       const context = await browser.newContext();
       const page = await context.newPage();
       const client = await context.newCDPSession(page);
@@ -775,9 +793,13 @@ test.describe('Performance Tests', () => {
 
       await context.tracing.stop({ path: `trace-3g-${testInfo.project.name}.zip` });
       await context.close();
+      
+      printTestFooter();
     });
 
     test('Performance under CPU throttling', async ({ browser }, testInfo) => {
+      printTestHeader('CPU Throttling Performance Test');
+      
       const context = await browser.newContext();
       const page = await context.newPage();
       
@@ -828,9 +850,13 @@ test.describe('Performance Tests', () => {
       
       await context.tracing.stop({ path: `trace-cpu-${testInfo.project.name}.zip` });
       await context.close();
+      
+      printTestFooter();
     });
 
     test('Performance under concurrent user load', async ({ browser }, testInfo) => {
+      printTestHeader('Concurrent Users Performance Test');
+      
       const NUM_CONCURRENT_USERS = 5;
       const startTime = Date.now();
       const contexts = await Promise.all(
@@ -1032,9 +1058,13 @@ test.describe('Performance Tests', () => {
       });
 
       await Promise.all(contexts.map(context => context.close()));
+      
+      printTestFooter();
     });
 
     test('Performance under memory pressure', async ({ browser }, testInfo) => {
+      printTestHeader('Memory Pressure Performance Test');
+      
       const context = await browser.newContext();
       const page = await context.newPage();
       
@@ -1351,6 +1381,8 @@ test.describe('Performance Tests', () => {
         await context.tracing.stop({ path: `trace-memory-${testInfo.project.name}.zip` });
         await context.close();
       }
+      
+      printTestFooter();
     });
   });
 });
