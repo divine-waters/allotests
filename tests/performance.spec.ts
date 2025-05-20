@@ -1,3 +1,29 @@
+import { test, expect, BrowserContext, Page } from '@playwright/test';
+import { BENCHMARKS } from './constants';
+import { printTestHeader, printTestFooter } from './utils';
+
+interface LCPDetails {
+  lcp: number;
+  element: string;
+  size: number;
+  url: string;
+  timestamp: number;
+}
+
+interface TBTDetails {
+  totalTBT: number;
+  tasks: Array<{
+    name: string;
+    duration: number;
+    startTime: number;
+  }>;
+}
+
+interface NavigationMetrics {
+  resources: number;
+  loadTime: number;
+}
+
 function printTestInsights(metrics: any, testType: string) {
   console.log('\n💡 Test Insights:');
   console.log('-'.repeat(40));
@@ -164,13 +190,42 @@ function printTestInsights(metrics: any, testType: string) {
 test.describe('Performance Tests', () => {
   const url = 'https://www.allocommunications.com/';
 
-  // Original performance test
   test('Homepage Performance', async ({ page, context }) => {
     printTestHeader('Homepage Performance Test');
     
-    // ... existing test code ...
+    // Navigate to the homepage
+    await page.goto(url);
+    
+    // Collect LCP details
+    const lcpDetails: LCPDetails = await page.evaluate(() => {
+      const entries = performance.getEntriesByType('largest-contentful-paint');
+      const lastEntry = entries[entries.length - 1] as any; // Using any for now as types are not available
+      const element = lastEntry?.element?.tagName || 'unknown';
+      const size = lastEntry?.size || 0;
+      const url = lastEntry?.url || '';
+      return {
+        lcp: lastEntry?.startTime || 0,
+        element,
+        size,
+        url,
+        timestamp: lastEntry?.startTime || 0
+      };
+    });
 
-    // LCP Diagnostic Report
+    // Collect TBT details
+    const tbtDetails: TBTDetails = await page.evaluate(() => {
+      const entries = performance.getEntriesByType('longtask');
+      return {
+        totalTBT: entries.reduce((sum, entry) => sum + entry.duration, 0),
+        tasks: entries.map(entry => ({
+          name: entry.name,
+          duration: entry.duration,
+          startTime: entry.startTime
+        }))
+      };
+    });
+
+    // Print reports
     printTestHeader('LCP Diagnostic Report');
     console.log(`LCP Value: ${lcpDetails.lcp}ms (Threshold: 2500ms)`);
     console.log(`LCP Element: ${lcpDetails.element}`);
@@ -179,13 +234,15 @@ test.describe('Performance Tests', () => {
     console.log(`Timestamp: ${lcpDetails.timestamp}ms`);
     printTestInsights({ lcp: lcpDetails.lcp }, 'LCP');
 
-    // TBT Diagnostic Report
     printTestHeader('TBT Diagnostic Report');
     console.log(`Total Blocking Time: ${tbtDetails.totalTBT}ms`);
     console.log(`Threshold: 300ms (Good: 0-200ms, Needs Improvement: 200-600ms, Poor: >600ms)`);
     
     if (tbtDetails.tasks.length > 0) {
-      // ... existing TBT analysis code ...
+      console.log('\nBlocking Tasks:');
+      tbtDetails.tasks.forEach(task => {
+        console.log(`• ${task.name}: ${task.duration.toFixed(0)}ms at ${task.startTime.toFixed(0)}ms`);
+      });
     } else {
       console.log('\nNo blocking tasks detected during measurement period.');
     }
@@ -199,34 +256,125 @@ test.describe('Performance Tests', () => {
     test('Performance under 3G network conditions', async ({ browser }, testInfo) => {
       printTestHeader('3G Network Performance Test');
       
-      // ... existing test code ...
+      const context = await browser.newContext({
+        ...testInfo.project.use,
+        // Using CDP session for network throttling
+        serviceWorkers: 'block'
+      });
+      
+      // Set network conditions using CDP
+      const cdpSession = await context.newCDPSession(context.pages()[0]);
+      await cdpSession.send('Network.enable');
+      await cdpSession.send('Network.emulateNetworkConditions', {
+        offline: false,
+        downloadThroughput: (1.6 * 1024 * 1024) / 8, // 1.6 Mbps
+        uploadThroughput: (750 * 1024) / 8, // 750 Kbps
+        latency: 100 // 100ms
+      });
+      
+      const page = await context.newPage();
+      const startTime = Date.now();
+      await page.goto(url);
+      const totalLoadTime = Date.now() - startTime;
+      
+      const navigationMetrics: NavigationMetrics = await page.evaluate(() => {
+        const resources = performance.getEntriesByType('resource').length;
+        const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+        return {
+          resources,
+          loadTime: navEntry.loadEventEnd - navEntry.startTime
+        };
+      });
+      
+      const memoryMB = await page.evaluate(() => {
+        const memory = (performance as any).memory;
+        return memory ? memory.usedJSHeapSize / (1024 * 1024) : 0;
+      });
       
       printTestInsights({
         loadTime: totalLoadTime,
         resources: navigationMetrics.resources,
-        memoryMB: memoryMB
+        memoryMB
       }, '3G');
       
+      await context.close();
       printTestFooter();
     });
 
     test('Performance under CPU throttling', async ({ browser }, testInfo) => {
       printTestHeader('CPU Throttling Performance Test');
       
-      // ... existing test code ...
+      const context = await browser.newContext({
+        ...testInfo.project.use,
+        serviceWorkers: 'block'
+      });
+      
+      // Set CPU throttling using CDP
+      const cdpSession = await context.newCDPSession(context.pages()[0]);
+      await cdpSession.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      
+      const page = await context.newPage();
+      const startTime = Date.now();
+      await page.goto(url);
+      const loadTime = Date.now() - startTime;
+      
+      const jsExecutionTime = await page.evaluate(() => {
+        const entries = performance.getEntriesByType('measure');
+        return entries.reduce((sum, entry) => sum + entry.duration, 0);
+      });
       
       printTestInsights({
-        loadTime: metrics.loadTime,
-        jsExecutionTime: metrics.jsExecutionTime
+        loadTime,
+        jsExecutionTime
       }, 'CPU');
       
+      await context.close();
       printTestFooter();
     });
 
     test('Performance under concurrent user load', async ({ browser }, testInfo) => {
       printTestHeader('Concurrent Users Performance Test');
       
-      // ... existing test code ...
+      const numUsers = 10;
+      const contexts: BrowserContext[] = [];
+      const pages: Page[] = [];
+      const results = await Promise.all(
+        Array(numUsers).fill(null).map(async () => {
+          const context = await browser.newContext(testInfo.project.use);
+          contexts.push(context);
+          const page = await context.newPage();
+          pages.push(page);
+          const startTime = Date.now();
+          
+          try {
+            await page.goto(url);
+            const loadTime = Date.now() - startTime;
+            return { loadTime, error: null };
+          } catch (error) {
+            return { loadTime: 0, error };
+          }
+        })
+      );
+      
+      // Clean up contexts
+      await Promise.all(contexts.map(c => c.close()));
+      
+      const successfulLoads = results.filter(r => !r.error);
+      const avgLoadTime = successfulLoads.reduce((sum, r) => sum + r.loadTime, 0) / successfulLoads.length;
+      const errorRate = (numUsers - successfulLoads.length) / numUsers;
+      
+      // Use the first page for resource contention analysis
+      const resourceContention = await pages[0]?.evaluate(() => {
+        const entries = performance.getEntriesByType('resource');
+        const concurrentRequests = entries.reduce((max, entry) => {
+          const start = entry.startTime;
+          const end = start + entry.duration;
+          return Math.max(max, entries.filter(e => 
+            e.startTime <= end && (e.startTime + e.duration) >= start
+          ).length);
+        }, 0);
+        return concurrentRequests / entries.length;
+      }) || 0;
       
       printTestInsights({
         avgLoadTime,
@@ -240,7 +388,31 @@ test.describe('Performance Tests', () => {
     test('Performance under memory pressure', async ({ browser }, testInfo) => {
       printTestHeader('Memory Pressure Performance Test');
       
-      // ... existing test code ...
+      const context = await browser.newContext(testInfo.project.use);
+      const page = await context.newPage();
+      
+      // Initial metrics
+      const initialMetrics = await page.evaluate(() => ({
+        heapSize: (performance as any).memory?.usedJSHeapSize || 0,
+        domNodes: document.getElementsByTagName('*').length,
+        eventListeners: (window as any).__eventListeners?.length || 0
+      }));
+      
+      // Navigate and interact
+      await page.goto(url);
+      await page.click('button'); // Trigger some interaction
+      await page.waitForTimeout(1000);
+      
+      // Final metrics
+      const finalMetrics = await page.evaluate(() => ({
+        heapSize: (performance as any).memory?.usedJSHeapSize || 0,
+        domNodes: document.getElementsByTagName('*').length,
+        eventListeners: (window as any).__eventListeners?.length || 0
+      }));
+      
+      const heapGrowth = (finalMetrics.heapSize - initialMetrics.heapSize) / (1024 * 1024);
+      const finalDomNodes = finalMetrics.domNodes;
+      const finalEventListeners = finalMetrics.eventListeners;
       
       printTestInsights({
         heapGrowth,
@@ -248,6 +420,7 @@ test.describe('Performance Tests', () => {
         eventListeners: finalEventListeners
       }, 'Memory');
       
+      await context.close();
       printTestFooter();
     });
   });
