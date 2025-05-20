@@ -105,19 +105,22 @@ const COMPETITORS: CompetitorSite[] = [
   }
 ];
 
-// Performance thresholds based on Core Web Vitals
+// Performance thresholds based on Core Web Vitals and competitive analysis
 const THRESHOLDS = {
   lcp: {
-    good: 2500,    // 2.5s
-    poor: 4000     // 4s
+    excellent: 1000,   // 1s - Outstanding performance
+    good: 2000,       // 2s - Good performance
+    poor: 4000        // 4s - Poor performance
   },
   cls: {
-    good: 0.1,     // 0.1
-    poor: 0.25     // 0.25
+    excellent: 0.05,  // 0.05 - Outstanding stability
+    good: 0.1,        // 0.1 - Good stability
+    poor: 0.25        // 0.25 - Poor stability
   },
   ttfb: {
-    good: 200,     // 200ms
-    poor: 500      // 500ms
+    excellent: 100,   // 100ms - Outstanding response
+    good: 200,        // 200ms - Good response
+    poor: 500         // 500ms - Poor response
   }
 };
 
@@ -140,31 +143,47 @@ interface PerformanceNavigationTiming extends PerformanceEntry {
   requestStart: number;
 }
 
-// Helper function to calculate individual metric scores on 0-100 scale
-function calculateMetricScore(value: number, good: number, poor: number): number {
-  if (value <= good) return 100;
-  if (value >= poor) return 0;
-  // Linear interpolation between good and poor thresholds
-  return Math.round(100 - ((value - good) / (poor - good)) * 100);
+// Helper function to calculate individual metric scores on 0-100 scale with more granular scoring
+function calculateMetricScore(value: number, thresholds: { excellent: number; good: number; poor: number }): number {
+  if (value <= thresholds.excellent) return 100;
+  if (value <= thresholds.good) {
+    // Linear interpolation between excellent and good
+    return Math.round(80 + ((thresholds.good - value) / (thresholds.good - thresholds.excellent)) * 20);
+  }
+  if (value <= thresholds.poor) {
+    // Linear interpolation between good and poor
+    return Math.round(40 + ((thresholds.poor - value) / (thresholds.poor - thresholds.good)) * 40);
+  }
+  return Math.max(0, Math.round(40 * (thresholds.poor / value)));
 }
 
 function calculateScore(metrics: { lcp: number; cls: number; ttfb: number }): number {
   const scores = {
-    lcp: calculateMetricScore(metrics.lcp, THRESHOLDS.lcp.good, THRESHOLDS.lcp.poor),
-    cls: calculateMetricScore(metrics.cls, THRESHOLDS.cls.good, THRESHOLDS.cls.poor),
-    ttfb: calculateMetricScore(metrics.ttfb, THRESHOLDS.ttfb.good, THRESHOLDS.ttfb.poor)
+    lcp: calculateMetricScore(metrics.lcp, THRESHOLDS.lcp),
+    cls: calculateMetricScore(metrics.cls, THRESHOLDS.cls),
+    ttfb: calculateMetricScore(metrics.ttfb, THRESHOLDS.ttfb)
   };
 
-  return Math.round(Object.values(scores).reduce((sum, score) => sum + score, 0) / Object.keys(scores).length);
+  // Weight the metrics (LCP is most important, then TTFB, then CLS)
+  const weightedScore = (scores.lcp * 0.5) + (scores.ttfb * 0.3) + (scores.cls * 0.2);
+  return Math.round(weightedScore);
 }
 
 function getRating(score: number): { rating: string; color: string } {
-  if (score >= 90) return { rating: 'EXCELLENT', color: '\x1b[32m' }; // Green
-  if (score >= 75) return { rating: 'VERY GOOD', color: '\x1b[36m' }; // Cyan
-  if (score >= 60) return { rating: 'GOOD', color: '\x1b[34m' }; // Blue
-  if (score >= 45) return { rating: 'FAIR', color: '\x1b[33m' }; // Yellow
-  if (score >= 30) return { rating: 'NEEDS IMPROVEMENT', color: '\x1b[35m' }; // Magenta
+  if (score >= 95) return { rating: 'EXCELLENT', color: '\x1b[32m' }; // Green
+  if (score >= 85) return { rating: 'VERY GOOD', color: '\x1b[36m' }; // Cyan
+  if (score >= 75) return { rating: 'GOOD', color: '\x1b[34m' }; // Blue
+  if (score >= 65) return { rating: 'FAIR', color: '\x1b[33m' }; // Yellow
+  if (score >= 50) return { rating: 'NEEDS IMPROVEMENT', color: '\x1b[35m' }; // Magenta
   return { rating: 'POOR', color: '\x1b[31m' }; // Red
+}
+
+// Helper function to get metric status with more granular ratings
+function getMetricStatus(value: number, threshold: { excellent: number; good: number; poor: number }): string {
+  if (value <= threshold.excellent) return '\x1b[32mEXCELLENT\x1b[0m';
+  if (value <= threshold.good) return '\x1b[34mGOOD\x1b[0m';
+  if (value <= threshold.poor) return '\x1b[33mNEEDS IMPROVEMENT\x1b[0m';
+  return '\x1b[31mPOOR\x1b[0m';
 }
 
 test.describe('Competitor Performance Analysis', () => {
@@ -181,8 +200,6 @@ test.describe('Competitor Performance Analysis', () => {
 
   for (const competitor of COMPETITORS) {
     test(`Performance test for ${competitor.name}`, async ({ page }, testInfo) => {
-      const browserName = testInfo.project.use.browserName;
-      
       // Basic Performance Test with more lenient navigation strategy
       try {
         await page.goto(competitor.url, { 
@@ -292,17 +309,19 @@ test.describe('Competitor Performance Analysis', () => {
         };
         
         console.log(`\nvs ${c.name}:`);
-        if (metricDiffs.lcp < 0) console.log(`- LCP is ${Math.abs(metricDiffs.lcp).toFixed(0)}ms faster`);
-        if (metricDiffs.cls < 0) console.log(`- CLS is ${Math.abs(metricDiffs.cls).toFixed(3)} better`);
-        if (metricDiffs.ttfb < 0) console.log(`- TTFB is ${Math.abs(metricDiffs.ttfb).toFixed(0)}ms faster`);
+        if (metricDiffs.lcp !== 0) {
+          const diff = Math.abs(metricDiffs.lcp);
+          console.log(`- LCP is ${diff.toFixed(0)}ms ${metricDiffs.lcp < 0 ? 'faster' : 'slower'}`);
+        }
+        if (metricDiffs.cls !== 0) {
+          const diff = Math.abs(metricDiffs.cls);
+          console.log(`- CLS is ${diff.toFixed(3)} ${metricDiffs.cls < 0 ? 'better' : 'worse'}`);
+        }
+        if (metricDiffs.ttfb !== 0) {
+          const diff = Math.abs(metricDiffs.ttfb);
+          console.log(`- TTFB is ${diff.toFixed(0)}ms ${metricDiffs.ttfb < 0 ? 'faster' : 'slower'}`);
+        }
       });
     }
   });
-});
-
-// Helper function to get metric status
-function getMetricStatus(value: number, threshold: { good: number; poor: number }): string {
-  if (value <= threshold.good) return '\x1b[32mGOOD\x1b[0m';
-  if (value >= threshold.poor) return '\x1b[31mPOOR\x1b[0m';
-  return '\x1b[33mNEEDS IMPROVEMENT\x1b[0m';
-} 
+}); 

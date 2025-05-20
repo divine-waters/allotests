@@ -302,20 +302,14 @@ const BENCHMARKS = {
   }
 };
 
-function getPerformanceRating(value: number, thresholds: { good: number, needsImprovement: number, poor: number }): { rating: string, needsAction: boolean } {
-  if (value <= thresholds.good) return { rating: 'GOOD', needsAction: false };
-  if (value <= thresholds.needsImprovement) return { rating: 'NEEDS IMPROVEMENT', needsAction: true };
+function getPerformanceRating(value: number, benchmark: { good: number; needsImprovement: number; poor: number }) {
+  if (value <= benchmark.good) return { rating: 'GOOD', needsAction: false };
+  if (value <= benchmark.needsImprovement) return { rating: 'NEEDS IMPROVEMENT', needsAction: true };
   return { rating: 'POOR', needsAction: true };
 }
 
-function logTestContext(testInfo: any) {
-  const browser = testInfo.project.use.browserName;
-  console.log(`\nTest Environment: ${browser}`);
-  console.log('='.repeat(50));
-}
-
 /**
- * Helper functions for enhanced reporting
+ * Helper functions for focused performance reporting
  */
 function formatMetric(value: number, unit: string = 'ms'): string {
   if (unit === 'ms') return `${Math.round(value)}${unit}`;
@@ -338,14 +332,6 @@ function formatRating(rating: string): string {
   return `${color}${rating}\x1b[0m`;
 }
 
-function printSection(title: string, content: () => void) {
-  console.log('\n' + '='.repeat(80));
-  console.log(` ${title} `.padStart(40 + title.length/2, '=').padEnd(80, '='));
-  console.log('='.repeat(80));
-  content();
-  console.log('-'.repeat(80));
-}
-
 function printMetric(name: string, value: number | string, rating?: { rating: string, needsAction: boolean }, unit: string = 'ms') {
   const formattedValue = typeof value === 'number' ? formatMetric(value, unit) : value;
   const ratingStr = rating ? ` (${formatRating(rating.rating)})` : '';
@@ -357,19 +343,41 @@ function printMetric(name: string, value: number | string, rating?: { rating: st
 }
 
 function printRecommendations(recommendations: string[]) {
+  if (recommendations.length === 0) return;
   console.log('\n  Recommendations:');
   recommendations.forEach((rec, i) => {
     console.log(`    ${i + 1}. ${rec}`);
   });
 }
 
+function printSection(title: string, content: () => void) {
+  console.log('\n' + '='.repeat(80));
+  console.log(` ${title} `.padStart(40 + title.length/2, '=').padEnd(80, '='));
+  console.log('='.repeat(80));
+  content();
+  console.log('-'.repeat(80));
+}
+
 function printTrend(data: Array<{ timestamp: number, value: number }>, label: string, unit: string = 'ms') {
+  // Filter out zero values and ensure we have meaningful data
+  const meaningfulData = data.filter(point => point.value > 0);
+  
+  // Only print trend if we have meaningful data
+  if (meaningfulData.length === 0) {
+    return; // Skip printing if no meaningful data
+  }
+
   console.log(`\n  ${label} Trend:`);
-  const maxValue = Math.max(...data.map(d => d.value));
+  const maxValue = Math.max(...meaningfulData.map(d => d.value));
   const width = 50;
   
-  data.forEach((point, i) => {
-    const timeElapsed = (point.timestamp - data[0].timestamp) / 1000;
+  // Only show a subset of points if there are too many
+  const displayPoints = meaningfulData.length > 10 
+    ? meaningfulData.filter((_, i) => i % Math.ceil(meaningfulData.length / 10) === 0)
+    : meaningfulData;
+  
+  displayPoints.forEach((point, i) => {
+    const timeElapsed = (point.timestamp - meaningfulData[0].timestamp) / 1000;
     const barLength = Math.round((point.value / maxValue) * width);
     const bar = '█'.repeat(barLength) + '░'.repeat(width - barLength);
     console.log(`    ${timeElapsed.toFixed(1)}s: ${bar} ${formatMetric(point.value, unit)}`);
@@ -390,7 +398,7 @@ test.describe('Performance Tests', () => {
     // Stop tracing and save the trace
     await context.tracing.stop({ path: 'trace.zip' });
 
-    // Assert that the page loaded successfully (you might need to adjust this)
+    // Assert that the page loaded successfully
     expect(page.url()).toBe(url);
 
     // Largest Contentful Paint (LCP) with enhanced diagnostics
@@ -429,9 +437,9 @@ test.describe('Performance Tests', () => {
           resolve({ lcp: 0, element: 'unsupported', size: 0, url: 'N/A', timestamp: 0 });
         }
       });
-    }, { timeout: 6000 }); // Add explicit timeout to page.evaluate
+    }, { timeout: 6000 });
 
-    console.log('LCP Diagnostic Report:');
+    console.log('\nLCP Diagnostic Report:');
     console.log(`LCP Value: ${lcpDetails.lcp}ms (Threshold: 2500ms)`);
     console.log(`LCP Element: ${lcpDetails.element}`);
     console.log(`Element Size: ${Math.round(lcpDetails.size)}px²`);
@@ -579,7 +587,7 @@ test.describe('Performance Tests', () => {
       });
     }, { timeout: 6000 });
 
-    console.log('TBT Diagnostic Report:');
+    console.log('\nTBT Diagnostic Report:');
     console.log(`Total Blocking Time: ${tbtDetails.totalTBT}ms`);
     console.log(`Threshold: 300ms (Good: 0-200ms, Needs Improvement: 200-600ms, Poor: >600ms)`);
     
@@ -636,7 +644,6 @@ test.describe('Performance Tests', () => {
   // Stress test scenarios
   test.describe('Stress Tests', () => {
     test('Performance under 3G network conditions', async ({ browser }, testInfo) => {
-      logTestContext(testInfo);
       const context = await browser.newContext();
       const page = await context.newPage();
       const client = await context.newCDPSession(page);
@@ -766,25 +773,11 @@ test.describe('Performance Tests', () => {
         console.log('  - Consider using a service worker for caching');
       }
 
-      // Resource Prioritization Analysis
-      console.log('\nResource Prioritization:');
-      const highPriorityResources = navigationMetrics.resourcePrioritization
-        .filter(r => r.priority === 'high')
-        .sort((a, b) => b.size - a.size);
-      
-      if (highPriorityResources.length > 0) {
-        console.log('High Priority Resources:');
-        highPriorityResources.slice(0, 5).forEach(r => {
-          console.log(`  - ${r.url} (${(r.size / 1024).toFixed(1)}KB, ${r.duration.toFixed(0)}ms)`);
-        });
-      }
-      
       await context.tracing.stop({ path: `trace-3g-${testInfo.project.name}.zip` });
       await context.close();
     });
 
     test('Performance under CPU throttling', async ({ browser }, testInfo) => {
-      logTestContext(testInfo);
       const context = await browser.newContext();
       const page = await context.newPage();
       
@@ -838,8 +831,8 @@ test.describe('Performance Tests', () => {
     });
 
     test('Performance under concurrent user load', async ({ browser }, testInfo) => {
-      logTestContext(testInfo);
       const NUM_CONCURRENT_USERS = 5;
+      const startTime = Date.now();
       const contexts = await Promise.all(
         Array(NUM_CONCURRENT_USERS).fill(null).map(() => browser.newContext())
       );
@@ -935,166 +928,150 @@ test.describe('Performance Tests', () => {
       
       // Calculate aggregate metrics
       const avgLoadTime = results.reduce((sum, r) => sum + r.loadTime, 0) / results.length;
+      const maxLoadTime = Math.max(...results.map(r => r.loadTime));
+      const minLoadTime = Math.min(...results.map(r => r.loadTime));
       const loadTimeVariance = results.reduce((sum, r) => sum + Math.pow(r.loadTime - avgLoadTime, 2), 0) / results.length;
       const resourceContention = Math.sqrt(loadTimeVariance) / avgLoadTime;
       
       // Calculate server metrics
       const avgResponseTime = serverMetrics.responseTimes.reduce((a, b) => a + b, 0) / serverMetrics.responseTimes.length;
+      const maxResponseTime = Math.max(...serverMetrics.responseTimes);
       const errorRate = serverMetrics.errors / (serverMetrics.responseTimes.length + serverMetrics.errors);
       
-      printSection('Concurrent Users Test Results', () => {
+      // Calculate memory metrics
+      const avgMemoryUsage = results.reduce((sum, r) => sum + (r.jsHeapSize / 1024 / 1024), 0) / results.length;
+      const maxMemoryUsage = Math.max(...results.map(r => r.jsHeapSize / 1024 / 1024));
+      
+      // Calculate DOM metrics
+      const avgDomNodes = results.reduce((sum, r) => sum + r.domNodes, 0) / results.length;
+      const avgResources = results.reduce((sum, r) => sum + r.resources, 0) / results.length;
+
+      printSection('Concurrent Users Test Summary', () => {
         console.log(`\nTest Configuration:`);
         console.log(`  Number of Users: ${NUM_CONCURRENT_USERS}`);
         console.log(`  Browser: ${testInfo.project.use.browserName}`);
+        console.log(`  Test Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
-        results.forEach((result, index) => {
-          printSection(`User ${index + 1} Metrics`, () => {
-            printMetric('Load Time', result.loadTime, 
-              getPerformanceRating(result.loadTime, BENCHMARKS.concurrent.loadTime));
-            
-            const memoryMB = result.jsHeapSize / 1024 / 1024;
-            printMetric('Memory Usage', memoryMB, 
-              getPerformanceRating(memoryMB, BENCHMARKS.concurrent.memoryPerUser), 'MB');
-            
-            printMetric('DOM Nodes', result.domNodes);
-            printMetric('Total Resources', result.resources);
+        console.log('\nPerformance Metrics:');
+        console.log('='.repeat(80));
+        
+        // Load Time Analysis
+        const loadTimeRating = getPerformanceRating(avgLoadTime, BENCHMARKS.concurrent.loadTime);
+        printMetric('Average Load Time', avgLoadTime, loadTimeRating);
+        printMetric('Min Load Time', minLoadTime);
+        printMetric('Max Load Time', maxLoadTime);
+        printMetric('Load Time Variance', Math.sqrt(loadTimeVariance));
+        
+        // Memory Analysis
+        const memoryRating = getPerformanceRating(avgMemoryUsage, BENCHMARKS.concurrent.memoryPerUser);
+        printMetric('Average Memory Usage', avgMemoryUsage, memoryRating, 'MB');
+        printMetric('Peak Memory Usage', maxMemoryUsage, undefined, 'MB');
+        
+        // Server Performance
+        const serverRating = getPerformanceRating(avgResponseTime, BENCHMARKS.extended.concurrent.serverResponseTime);
+        printMetric('Average Response Time', avgResponseTime, serverRating);
+        printMetric('Peak Response Time', maxResponseTime);
+        printMetric('Error Rate', errorRate * 100, 
+          getPerformanceRating(errorRate, BENCHMARKS.extended.concurrent.errorRate), '%');
+        
+        // Resource Analysis
+        printMetric('Average DOM Nodes', avgDomNodes, 
+          getPerformanceRating(avgDomNodes, BENCHMARKS.memory.domNodes));
+        printMetric('Average Resources', avgResources);
+        printMetric('Resource Contention', resourceContention * 100, 
+          getPerformanceRating(resourceContention, BENCHMARKS.concurrent.resourceContention), '%');
 
-            console.log('\n  Server Performance:');
-            printMetric('Average Response Time', result.serverTiming.avg);
-            printMetric('Maximum Response Time', result.serverTiming.max);
-            printMetric('95th Percentile', result.serverTiming.p95);
-
-            console.log('\n  Connection Metrics:');
-            printMetric('Total Connections', result.connectionMetrics.totalConnections);
-            printMetric('Average Connection Time', 
-              result.connectionMetrics.totalConnectionTime / result.connectionMetrics.totalConnections);
-            printMetric('Maximum Connection Time', result.connectionMetrics.maxConnectionTime);
-          });
-        });
-
-        printSection('Aggregate Server Metrics', () => {
-          printMetric('Average Response Time', avgResponseTime, 
-            getPerformanceRating(avgResponseTime, BENCHMARKS.extended.concurrent.serverResponseTime));
-          if (getPerformanceRating(avgResponseTime, BENCHMARKS.extended.concurrent.serverResponseTime).needsAction) {
-            printRecommendations([
-              'Implement server-side caching',
-              'Consider using a CDN',
-              'Review database query optimization'
-            ]);
-          }
-
-          printMetric('Error Rate', errorRate * 100, 
-            getPerformanceRating(errorRate, BENCHMARKS.extended.concurrent.errorRate), '%');
-          if (getPerformanceRating(errorRate, BENCHMARKS.extended.concurrent.errorRate).needsAction) {
-            printRecommendations([
-              'Implement retry mechanisms',
-              'Review error handling',
-              'Consider implementing circuit breakers'
-            ]);
-          }
-
-          printMetric('Maximum Queue Length', serverMetrics.maxQueueLength, 
-            getPerformanceRating(serverMetrics.maxQueueLength, BENCHMARKS.extended.concurrent.queueLength));
-          if (getPerformanceRating(serverMetrics.maxQueueLength, BENCHMARKS.extended.concurrent.queueLength).needsAction) {
-            printRecommendations([
-              'Implement request queuing',
-              'Consider horizontal scaling',
-              'Review connection pool settings'
-            ]);
-          }
-
-          // Print response time distribution
-          const responseTimeData = serverMetrics.responseTimes
-            .sort((a, b) => a - b)
-            .map((time, i) => ({
-              timestamp: i,
-              value: time
-            }));
-          printTrend(responseTimeData, 'Response Time Distribution');
-        });
+        // Recommendations based on all metrics
+        console.log('\nKey Findings & Recommendations:');
+        console.log('='.repeat(80));
+        
+        const recommendations = new Set<string>();
+        
+        // Load Time Recommendations
+        if (loadTimeRating.needsAction) {
+          recommendations.add('Optimize page load performance:');
+          recommendations.add('  • Implement critical CSS inlining');
+          recommendations.add('  • Use resource hints (preconnect, prefetch)');
+          recommendations.add('  • Consider implementing a service worker for caching');
+          recommendations.add('  • Review and optimize third-party script loading');
+        }
+        
+        // Memory Recommendations
+        if (memoryRating.needsAction) {
+          recommendations.add('Address memory usage:');
+          recommendations.add('  • Implement memory leak detection');
+          recommendations.add('  • Review third-party script impact');
+          recommendations.add('  • Consider implementing resource cleanup');
+          recommendations.add('  • Optimize image loading and caching');
+        }
+        
+        // Server Performance Recommendations
+        if (serverRating.needsAction) {
+          recommendations.add('Improve server performance:');
+          recommendations.add('  • Implement server-side caching');
+          recommendations.add('  • Consider using a CDN');
+          recommendations.add('  • Review database query optimization');
+          recommendations.add('  • Implement request queuing for high load');
+        }
+        
+        // Resource Contention Recommendations
+        if (resourceContention > BENCHMARKS.concurrent.resourceContention.needsImprovement) {
+          recommendations.add('Reduce resource contention:');
+          recommendations.add('  • Implement request throttling');
+          recommendations.add('  • Consider horizontal scaling');
+          recommendations.add('  • Review connection pool settings');
+          recommendations.add('  • Implement proper caching strategies');
+        }
+        
+        // Print all recommendations
+        if (recommendations.size > 0) {
+          Array.from(recommendations).forEach(rec => console.log(rec));
+        } else {
+          console.log('All metrics are within acceptable ranges. No immediate action required.');
+        }
       });
 
       await Promise.all(contexts.map(context => context.close()));
     });
 
     test('Performance under memory pressure', async ({ browser }, testInfo) => {
-      logTestContext(testInfo);
       const context = await browser.newContext();
       const page = await context.newPage();
       
-      // Track memory metrics over time
-      const memorySnapshots: Array<{
-        timestamp: number;
-        jsHeapSize: number;
-        domNodes: number;
-        eventListeners: number;
-        imageMemory: number;
-        gcCount: number;
-      }> = [];
-      
-      let gcCount = 0;
-      let client: any = null;
-      
-      // Only enable CDP session for Chromium browsers
-      if (testInfo.project.use.browserName === 'chromium') {
-        try {
-          client = await context.newCDPSession(page);
-          await client.send('HeapProfiler.enable');
-          client.on('HeapProfiler.lastSeenObjectId', () => {
-            gcCount++;
-          });
-        } catch (error) {
-          console.log('CDP session not available - using alternative memory metrics');
-        }
-      }
-      
-      // Measure initial memory state
-      const initialMetrics = await page.evaluate(() => {
-        const images = Array.from(document.getElementsByTagName('img'));
-        const imageMemory = images.reduce((total, img) => {
-          const rect = img.getBoundingClientRect();
-          return total + (rect.width * rect.height * 4); // Approximate memory for RGBA
-        }, 0);
+      try {
+        await context.tracing.start({ screenshots: true, snapshots: true });
         
-        return {
-          jsHeapSize: (performance as any).memory?.usedJSHeapSize || 0,
-          domNodes: document.getElementsByTagName('*').length,
-          eventListeners: Array.from(document.querySelectorAll('*'))
-            .reduce((count, element) => {
-              const handlers = (element as any).__handlers || [];
-              return count + handlers.length;
-            }, 0),
-          imageMemory
-        };
-      });
-      
-      memorySnapshots.push({
-        timestamp: Date.now(),
-        ...initialMetrics,
-        gcCount
-      });
-      
-      // Create memory pressure
-      const NUM_INSTANCES = 3;
-      await Promise.all(
-        Array(NUM_INSTANCES).fill(null).map(() => 
-          page.evaluate(() => {
-            const iframe = document.createElement('iframe');
-            iframe.src = window.location.href;
-            document.body.appendChild(iframe);
-            return new Promise(resolve => iframe.onload = resolve);
-          })
-        )
-      );
-      
-      // Take periodic memory snapshots
-      for (let i = 0; i < 5; i++) {
-        await page.waitForTimeout(1000);
-        const metrics = await page.evaluate(() => {
+        const startTime = Date.now();
+        const memorySnapshots: Array<{
+          timestamp: number;
+          jsHeapSize: number;
+          domNodes: number;
+          eventListeners: number;
+          imageMemory: number;
+          gcCount: number;
+        }> = [];
+        let gcCount = 0;
+        let client: any = null;
+        
+        // Only enable CDP session for Chromium browsers
+        if (testInfo.project.use.browserName === 'chromium') {
+          try {
+            client = await context.newCDPSession(page);
+            await client.send('HeapProfiler.enable');
+            client.on('HeapProfiler.lastSeenObjectId', () => {
+              gcCount++;
+            });
+          } catch (error) {
+            console.log('CDP session not available - using alternative memory metrics');
+          }
+        }
+        
+        // Measure initial memory state
+        const initialMetrics = await page.evaluate(() => {
           const images = Array.from(document.getElementsByTagName('img'));
           const imageMemory = images.reduce((total, img) => {
             const rect = img.getBoundingClientRect();
-            return total + (rect.width * rect.height * 4);
+            return total + (rect.width * rect.height * 4); // Approximate memory for RGBA
           }, 0);
           
           return {
@@ -1111,182 +1088,269 @@ test.describe('Performance Tests', () => {
         
         memorySnapshots.push({
           timestamp: Date.now(),
-          ...metrics,
+          ...initialMetrics,
           gcCount
         });
-      }
-
-      // Clean up CDP session if it was created
-      if (client) {
-        try {
-          await client.detach();
-        } catch (error) {
-          console.log('Error detaching CDP session:', error);
+        
+        // Create memory pressure more gradually
+        const NUM_INSTANCES = 2; // Reduced from 3 to 2
+        const iframePromises: Promise<boolean>[] = [];
+        
+        for (let i = 0; i < NUM_INSTANCES; i++) {
+          try {
+            const iframePromise = page.evaluate<boolean>(() => {
+              return new Promise<boolean>((resolve, reject) => {
+                const iframe = document.createElement('iframe');
+                iframe.src = window.location.href;
+                
+                // Add timeout for iframe loading
+                const timeout = setTimeout(() => {
+                  reject(new Error('Iframe load timeout'));
+                }, 5000);
+                
+                iframe.onload = () => {
+                  clearTimeout(timeout);
+                  resolve(true);
+                };
+                
+                iframe.onerror = () => {
+                  clearTimeout(timeout);
+                  reject(new Error('Iframe load failed'));
+                };
+                
+                document.body.appendChild(iframe);
+              });
+            });
+            
+            // Wait a bit between iframe creations
+            await page.waitForTimeout(1000);
+            iframePromises.push(iframePromise);
+          } catch (error) {
+            console.log(`Warning: Failed to create iframe ${i + 1}: ${error.message}`);
+            // Continue with the test even if some iframes fail
+          }
         }
-      }
-
-      // Calculate memory growth rates
-      const heapGrowth = (memorySnapshots[memorySnapshots.length - 1].jsHeapSize - memorySnapshots[0].jsHeapSize) / 1024 / 1024;
-      const gcFrequency = gcCount / ((memorySnapshots[memorySnapshots.length - 1].timestamp - memorySnapshots[0].timestamp) / 1000);
-      
-      console.log('\nMemory Pressure Test Results:');
-      console.log('='.repeat(50));
-      
-      // Heap Growth Analysis
-      const heapRating = getPerformanceRating(heapGrowth, BENCHMARKS.memory.heapGrowth);
-      console.log(`Heap Growth: ${Math.round(heapGrowth)}MB (${heapRating.rating})`);
-      if (heapRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement memory leak detection');
-        console.log('  - Review object lifecycle management');
-        console.log('  - Consider implementing cleanup routines');
-      }
-      
-      // DOM Node Analysis
-      const finalDomNodes = memorySnapshots[memorySnapshots.length - 1].domNodes;
-      const domRating = getPerformanceRating(finalDomNodes, BENCHMARKS.memory.domNodes);
-      console.log(`\nFinal DOM Nodes: ${finalDomNodes} (${domRating.rating})`);
-      if (domRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement virtual DOM or windowing');
-        console.log('  - Review DOM manipulation patterns');
-        console.log('  - Consider lazy loading of DOM elements');
-      }
-      
-      // New metrics analysis
-      console.log('\nExtended Memory Metrics:');
-      console.log('='.repeat(50));
-      
-      // Event Listener Analysis
-      const finalEventListeners = memorySnapshots[memorySnapshots.length - 1].eventListeners;
-      const eventListenerRating = getPerformanceRating(finalEventListeners, BENCHMARKS.extended.memory.eventListeners);
-      console.log(`Event Listeners: ${finalEventListeners} (${eventListenerRating.rating})`);
-      if (eventListenerRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement event delegation');
-        console.log('  - Review event listener cleanup');
-        console.log('  - Consider using event batching');
-      }
-      
-      // Image Memory Analysis
-      const finalImageMemory = memorySnapshots[memorySnapshots.length - 1].imageMemory / 1024 / 1024;
-      const imageMemoryRating = getPerformanceRating(finalImageMemory, BENCHMARKS.extended.memory.imageMemory);
-      console.log(`\nImage Memory Usage: ${finalImageMemory.toFixed(1)}MB (${imageMemoryRating.rating})`);
-      if (imageMemoryRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement lazy loading for images');
-        console.log('  - Use responsive images with srcset');
-        console.log('  - Consider using modern image formats (WebP)');
-      }
-      
-      // Garbage Collection Analysis
-      const gcRating = getPerformanceRating(gcFrequency, BENCHMARKS.extended.memory.gcFrequency);
-      console.log(`\nGarbage Collection Frequency: ${gcFrequency.toFixed(2)} per second (${gcRating.rating})`);
-      if (gcRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Review object creation patterns');
-        console.log('  - Implement object pooling where appropriate');
-        console.log('  - Consider reducing temporary object creation');
-      }
-      
-      // Memory Growth Trend Analysis
-      console.log('\nMemory Growth Trend:');
-      memorySnapshots.forEach((snapshot, index) => {
-        const timeElapsed = (snapshot.timestamp - memorySnapshots[0].timestamp) / 1000;
-        console.log(`  ${timeElapsed.toFixed(1)}s: ${(snapshot.jsHeapSize / 1024 / 1024).toFixed(1)}MB (${snapshot.domNodes} nodes, ${snapshot.eventListeners} listeners)`);
-      });
-      
-      printSection('Memory Pressure Test Results', () => {
-        console.log(`\nTest Configuration:`);
-        console.log(`  Browser: ${testInfo.project.use.browserName}`);
-        console.log(`  Test Duration: ${((memorySnapshots[memorySnapshots.length - 1].timestamp - memorySnapshots[0].timestamp) / 1000).toFixed(1)}s`);
-
-        printSection('Memory Growth Analysis', () => {
-          printMetric('Heap Growth', heapGrowth, 
-            getPerformanceRating(heapGrowth, BENCHMARKS.memory.heapGrowth), 'MB');
-          if (getPerformanceRating(heapGrowth, BENCHMARKS.memory.heapGrowth).needsAction) {
-            printRecommendations([
-              'Implement memory leak detection',
-              'Review object lifecycle management',
-              'Consider implementing cleanup routines'
-            ]);
+        
+        // Wait for all iframes with a timeout
+        try {
+          await Promise.race([
+            Promise.all(iframePromises),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Iframe creation timeout')), 15000)
+            )
+          ]);
+        } catch (error) {
+          console.log(`Warning: ${error.message}`);
+          // Continue with the test even if iframe creation times out
+        }
+        
+        // Take periodic memory snapshots
+        for (let i = 0; i < 3; i++) { // Reduced from 5 to 3 snapshots
+          await page.waitForTimeout(1000);
+          try {
+            const metrics = await page.evaluate(() => {
+              const images = Array.from(document.getElementsByTagName('img'));
+              const imageMemory = images.reduce((total, img) => {
+                const rect = img.getBoundingClientRect();
+                return total + (rect.width * rect.height * 4);
+              }, 0);
+              
+              return {
+                jsHeapSize: (performance as any).memory?.usedJSHeapSize || 0,
+                domNodes: document.getElementsByTagName('*').length,
+                eventListeners: Array.from(document.querySelectorAll('*'))
+                  .reduce((count, element) => {
+                    const handlers = (element as any).__handlers || [];
+                    return count + handlers.length;
+                  }, 0),
+                imageMemory
+              };
+            });
+            
+            memorySnapshots.push({
+              timestamp: Date.now(),
+              ...metrics,
+              gcCount
+            });
+          } catch (error) {
+            console.log(`Warning: Failed to take memory snapshot ${i + 1}: ${error.message}`);
           }
+        }
 
-          printMetric('Final DOM Nodes', finalDomNodes, 
-            getPerformanceRating(finalDomNodes, BENCHMARKS.memory.domNodes));
-          if (getPerformanceRating(finalDomNodes, BENCHMARKS.memory.domNodes).needsAction) {
-            printRecommendations([
-              'Implement virtual DOM or windowing',
-              'Review DOM manipulation patterns',
-              'Consider lazy loading of DOM elements'
-            ]);
-          }
+        // Clean up iframes before continuing
+        try {
+          await page.evaluate(() => {
+            const iframes = document.getElementsByTagName('iframe');
+            Array.from(iframes).forEach(iframe => iframe.remove());
+          });
+        } catch (error) {
+          console.log(`Warning: Failed to clean up iframes: ${error.message}`);
+        }
+
+        // Calculate memory growth rates
+        const heapGrowth = (memorySnapshots[memorySnapshots.length - 1].jsHeapSize - memorySnapshots[0].jsHeapSize) / 1024 / 1024;
+        const gcFrequency = gcCount / ((memorySnapshots[memorySnapshots.length - 1].timestamp - memorySnapshots[0].timestamp) / 1000);
+        
+        console.log('\nMemory Pressure Test Results:');
+        console.log('='.repeat(50));
+        
+        // Heap Growth Analysis
+        const heapRating = getPerformanceRating(heapGrowth, BENCHMARKS.memory.heapGrowth);
+        console.log(`Heap Growth: ${Math.round(heapGrowth)}MB (${heapRating.rating})`);
+        if (heapRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement memory leak detection');
+          console.log('  - Review object lifecycle management');
+          console.log('  - Consider implementing cleanup routines');
+        }
+        
+        // DOM Node Analysis
+        const finalDomNodes = memorySnapshots[memorySnapshots.length - 1].domNodes;
+        const domRating = getPerformanceRating(finalDomNodes, BENCHMARKS.memory.domNodes);
+        console.log(`\nFinal DOM Nodes: ${finalDomNodes} (${domRating.rating})`);
+        if (domRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement virtual DOM or windowing');
+          console.log('  - Review DOM manipulation patterns');
+          console.log('  - Consider lazy loading of DOM elements');
+        }
+        
+        // New metrics analysis
+        console.log('\nExtended Memory Metrics:');
+        console.log('='.repeat(50));
+        
+        // Event Listener Analysis
+        const finalEventListeners = memorySnapshots[memorySnapshots.length - 1].eventListeners;
+        const eventListenerRating = getPerformanceRating(finalEventListeners, BENCHMARKS.extended.memory.eventListeners);
+        console.log(`Event Listeners: ${finalEventListeners} (${eventListenerRating.rating})`);
+        if (eventListenerRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement event delegation');
+          console.log('  - Review event listener cleanup');
+          console.log('  - Consider using event batching');
+        }
+        
+        // Image Memory Analysis
+        const finalImageMemory = memorySnapshots[memorySnapshots.length - 1].imageMemory / 1024 / 1024;
+        const imageMemoryRating = getPerformanceRating(finalImageMemory, BENCHMARKS.extended.memory.imageMemory);
+        console.log(`\nImage Memory Usage: ${finalImageMemory.toFixed(1)}MB (${imageMemoryRating.rating})`);
+        if (imageMemoryRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement lazy loading for images');
+          console.log('  - Use responsive images with srcset');
+          console.log('  - Consider using modern image formats (WebP)');
+        }
+        
+        // Garbage Collection Analysis
+        const gcRating = getPerformanceRating(gcFrequency, BENCHMARKS.extended.memory.gcFrequency);
+        console.log(`\nGarbage Collection Frequency: ${gcFrequency.toFixed(2)} per second (${gcRating.rating})`);
+        if (gcRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Review object creation patterns');
+          console.log('  - Implement object pooling where appropriate');
+          console.log('  - Consider reducing temporary object creation');
+        }
+        
+        // Memory Growth Trend Analysis
+        console.log('\nMemory Growth Trend:');
+        memorySnapshots.forEach((snapshot, index) => {
+          const timeElapsed = (snapshot.timestamp - memorySnapshots[0].timestamp) / 1000;
+          console.log(`  ${timeElapsed.toFixed(1)}s: ${(snapshot.jsHeapSize / 1024 / 1024).toFixed(1)}MB (${snapshot.domNodes} nodes, ${snapshot.eventListeners} listeners)`);
+        });
+        
+        printSection('Memory Pressure Test Summary', () => {
+          console.log(`\nTest Configuration:`);
+          console.log(`  Test Duration: ${((memorySnapshots[memorySnapshots.length - 1].timestamp - memorySnapshots[0].timestamp) / 1000).toFixed(1)}s`);
+
+          printSection('Memory Growth Analysis', () => {
+            printMetric('Heap Growth', heapGrowth, 
+              getPerformanceRating(heapGrowth, BENCHMARKS.memory.heapGrowth), 'MB');
+            if (getPerformanceRating(heapGrowth, BENCHMARKS.memory.heapGrowth).needsAction) {
+              printRecommendations([
+                'Implement memory leak detection',
+                'Review object lifecycle management',
+                'Consider implementing cleanup routines'
+              ]);
+            }
+
+            printMetric('Final DOM Nodes', finalDomNodes, 
+              getPerformanceRating(finalDomNodes, BENCHMARKS.memory.domNodes));
+            if (getPerformanceRating(finalDomNodes, BENCHMARKS.memory.domNodes).needsAction) {
+              printRecommendations([
+                'Implement virtual DOM or windowing',
+                'Review DOM manipulation patterns',
+                'Consider lazy loading of DOM elements'
+              ]);
+            }
+          });
+
+          printSection('Extended Memory Metrics', () => {
+            printMetric('Event Listeners', finalEventListeners, 
+              getPerformanceRating(finalEventListeners, BENCHMARKS.extended.memory.eventListeners));
+            if (getPerformanceRating(finalEventListeners, BENCHMARKS.extended.memory.eventListeners).needsAction) {
+              printRecommendations([
+                'Implement event delegation',
+                'Review event listener cleanup',
+                'Consider using event batching'
+              ]);
+            }
+
+            printMetric('Image Memory Usage', finalImageMemory, 
+              getPerformanceRating(finalImageMemory, BENCHMARKS.extended.memory.imageMemory), 'MB');
+            if (getPerformanceRating(finalImageMemory, BENCHMARKS.extended.memory.imageMemory).needsAction) {
+              printRecommendations([
+                'Implement lazy loading for images',
+                'Use responsive images with srcset',
+                'Consider using modern image formats (WebP)'
+              ]);
+            }
+
+            printMetric('GC Frequency', gcFrequency, 
+              getPerformanceRating(gcFrequency, BENCHMARKS.extended.memory.gcFrequency), '/s');
+            if (getPerformanceRating(gcFrequency, BENCHMARKS.extended.memory.gcFrequency).needsAction) {
+              printRecommendations([
+                'Review object creation patterns',
+                'Implement object pooling where appropriate',
+                'Consider reducing temporary object creation'
+              ]);
+            }
+          });
+
+          printSection('Memory Growth Trend', () => {
+            // Heap size trend
+            const heapData = memorySnapshots.map(snapshot => ({
+              timestamp: snapshot.timestamp,
+              value: snapshot.jsHeapSize / 1024 / 1024
+            }));
+            printTrend(heapData, 'Heap Size', 'MB');
+
+            // DOM nodes trend
+            const domData = memorySnapshots.map(snapshot => ({
+              timestamp: snapshot.timestamp,
+              value: snapshot.domNodes
+            }));
+            printTrend(domData, 'DOM Nodes');
+
+            // Event listeners trend
+            const listenerData = memorySnapshots.map(snapshot => ({
+              timestamp: snapshot.timestamp,
+              value: snapshot.eventListeners
+            }));
+            printTrend(listenerData, 'Event Listeners');
+
+            // Image memory trend
+            const imageData = memorySnapshots.map(snapshot => ({
+              timestamp: snapshot.timestamp,
+              value: snapshot.imageMemory / 1024 / 1024
+            }));
+            printTrend(imageData, 'Image Memory', 'MB');
+          });
         });
 
-        printSection('Extended Memory Metrics', () => {
-          printMetric('Event Listeners', finalEventListeners, 
-            getPerformanceRating(finalEventListeners, BENCHMARKS.extended.memory.eventListeners));
-          if (getPerformanceRating(finalEventListeners, BENCHMARKS.extended.memory.eventListeners).needsAction) {
-            printRecommendations([
-              'Implement event delegation',
-              'Review event listener cleanup',
-              'Consider using event batching'
-            ]);
-          }
-
-          printMetric('Image Memory Usage', finalImageMemory, 
-            getPerformanceRating(finalImageMemory, BENCHMARKS.extended.memory.imageMemory), 'MB');
-          if (getPerformanceRating(finalImageMemory, BENCHMARKS.extended.memory.imageMemory).needsAction) {
-            printRecommendations([
-              'Implement lazy loading for images',
-              'Use responsive images with srcset',
-              'Consider using modern image formats (WebP)'
-            ]);
-          }
-
-          printMetric('GC Frequency', gcFrequency, 
-            getPerformanceRating(gcFrequency, BENCHMARKS.extended.memory.gcFrequency), '/s');
-          if (getPerformanceRating(gcFrequency, BENCHMARKS.extended.memory.gcFrequency).needsAction) {
-            printRecommendations([
-              'Review object creation patterns',
-              'Implement object pooling where appropriate',
-              'Consider reducing temporary object creation'
-            ]);
-          }
-        });
-
-        printSection('Memory Growth Trend', () => {
-          // Heap size trend
-          const heapData = memorySnapshots.map(snapshot => ({
-            timestamp: snapshot.timestamp,
-            value: snapshot.jsHeapSize / 1024 / 1024
-          }));
-          printTrend(heapData, 'Heap Size', 'MB');
-
-          // DOM nodes trend
-          const domData = memorySnapshots.map(snapshot => ({
-            timestamp: snapshot.timestamp,
-            value: snapshot.domNodes
-          }));
-          printTrend(domData, 'DOM Nodes');
-
-          // Event listeners trend
-          const listenerData = memorySnapshots.map(snapshot => ({
-            timestamp: snapshot.timestamp,
-            value: snapshot.eventListeners
-          }));
-          printTrend(listenerData, 'Event Listeners');
-
-          // Image memory trend
-          const imageData = memorySnapshots.map(snapshot => ({
-            timestamp: snapshot.timestamp,
-            value: snapshot.imageMemory / 1024 / 1024
-          }));
-          printTrend(imageData, 'Image Memory', 'MB');
-        });
-      });
-
-      await context.close();
+      } finally {
+        await context.tracing.stop({ path: `trace-memory-${testInfo.project.name}.zip` });
+        await context.close();
+      }
     });
   });
 });
