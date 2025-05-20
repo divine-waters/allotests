@@ -15,38 +15,147 @@ interface CompetitorSite {
   name: string;
   url: string;
   region: string[];
+  serviceType: string;
+  marketFocus: string;
+  services: {
+    fiberInternet: boolean;
+    fiberTV: boolean;
+    fiberPhone: boolean;
+    mobilePhone: boolean;
+    smartTown: boolean;
+    wifiExperience: boolean;
+    outdoorWifi: boolean;
+    fiberStreaming: boolean;
+    bark: boolean;
+  };
 }
 
 const COMPETITORS: CompetitorSite[] = [
   {
-    name: 'ALLO Communications',
-    url: 'https://www.allocommunications.com/',
-    region: ['Nebraska', 'Colorado', 'Arizona', 'Missouri']
+    name: 'Great Plains Communications',
+    url: 'https://www.gpcom.com/',
+    region: ['Lincoln, NE', 'Grand Island, NE', 'Kearney, NE', 'Norfolk, NE'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: false,
+      wifiExperience: true,
+      outdoorWifi: false,
+      fiberStreaming: true,
+      bark: false
+    }
   },
   {
-    name: 'CenturyLink',
-    url: 'https://www.centurylink.com/',
-    region: ['Nebraska', 'Colorado', 'Arizona', 'Missouri']
+    name: 'Vast Broadband',
+    url: 'https://www.vastbroadband.com/',
+    region: ['Lincoln, NE', 'Grand Island, NE'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: false,
+      wifiExperience: true,
+      outdoorWifi: false,
+      fiberStreaming: true,
+      bark: false
+    }
   },
   {
-    name: 'Cox Communications',
-    url: 'https://www.cox.com/',
-    region: ['Arizona']
+    name: 'NextLight',
+    url: 'https://www.nextlight.net/',
+    region: ['Boulder, CO', 'Greeley, CO'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: true,
+      wifiExperience: true,
+      outdoorWifi: true,
+      fiberStreaming: true,
+      bark: false
+    }
   },
   {
-    name: 'Xfinity',
-    url: 'https://www.xfinity.com/',
-    region: ['Colorado', 'Arizona', 'Missouri']
+    name: 'Elevate Fiber',
+    url: 'https://elevatefiber.com/',
+    region: ['Boulder, CO', 'Brighton, CO'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: false,
+      wifiExperience: true,
+      outdoorWifi: false,
+      fiberStreaming: true,
+      bark: false
+    }
   },
   {
-    name: 'Mediacom',
-    url: 'https://www.mediacomcable.com/',
-    region: ['Missouri']
+    name: 'Ting Internet',
+    url: 'https://ting.com/internet',
+    region: ['Boulder, CO'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: false,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: false,
+      wifiExperience: true,
+      outdoorWifi: false,
+      fiberStreaming: false,
+      bark: false
+    }
   },
   {
-    name: 'Spectrum',
-    url: 'https://www.spectrum.com/',
-    region: ['Missouri']
+    name: 'Wyyerd Fiber',
+    url: 'https://wyyerd.com/',
+    region: ['Flagstaff, AZ', 'Lake Havasu City, AZ'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: false,
+      wifiExperience: true,
+      outdoorWifi: false,
+      fiberStreaming: true,
+      bark: false
+    }
+  },
+  {
+    name: 'Socket Telecom',
+    url: 'https://www.socket.net/',
+    region: ['Joplin, MO'],
+    serviceType: 'Fiber',
+    marketFocus: 'Residential & Business Fiber',
+    services: {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: false,
+      smartTown: false,
+      wifiExperience: true,
+      outdoorWifi: false,
+      fiberStreaming: true,
+      bark: false
+    }
   }
 ];
 
@@ -296,8 +405,36 @@ test.describe('Competitor Performance Analysis', () => {
     console.log('\n🌎 REGIONAL MARKET ANALYSIS');
     console.log('='.repeat(80));
 
-    // Calculate regional statistics
-    const regionalStats = Array.from(regionalResults.entries()).map(([region, competitors]) => {
+    // Define specific regions for analysis
+    const specificRegions = [
+      // Nebraska
+      'Lincoln, NE',
+      'Grand Island, NE',
+      'Kearney, NE',
+      'Norfolk, NE',
+      // Colorado
+      'Boulder, CO',
+      'Greeley, CO',
+      'Brighton, CO',
+      // Arizona
+      'Flagstaff, AZ',
+      'Lake Havasu City, AZ',
+      // Missouri
+      'Joplin, MO'
+    ].filter(region => 
+      COMPETITORS.some(competitor => competitor.region.includes(region))
+    );
+
+    // Calculate regional statistics for specific regions
+    const regionalStats = specificRegions.map(region => {
+      const competitors = results.filter(result => {
+        const competitor = COMPETITORS.find(c => c.name === result.name);
+        return competitor?.region.includes(region);
+      });
+
+      // Only include regions with fiber competitors
+      if (competitors.length === 0) return null;
+
       const avgScore = Math.round(competitors.reduce((sum, r) => sum + r.score, 0) / competitors.length);
       const bestProvider = competitors.sort((a, b) => b.score - a.score)[0];
       const worstProvider = competitors.sort((a, b) => a.score - b.score)[0];
@@ -310,26 +447,42 @@ test.describe('Competitor Performance Analysis', () => {
         worstProvider,
         performanceGap,
         providerCount: competitors.length,
-        totalProviders: COMPETITORS.filter(c => c.region.includes(region)).length
+        totalProviders: COMPETITORS.filter(c => c.region.includes(region)).length,
+        serviceTypes: [...new Set(COMPETITORS
+          .filter(c => c.region.includes(region))
+          .map(c => c.serviceType))]
       };
-    }).sort((a, b) => b.avgScore - a.avgScore);
+    })
+    .filter(stat => stat !== null) // Remove regions without fiber competitors
+    .sort((a, b) => b!.avgScore - a!.avgScore);
 
-    // Print regional comparison table
-    console.log('\nRegional Performance Comparison:');
-    console.log('-'.repeat(100));
-    console.log('Region'.padEnd(15) + 'Avg Score'.padEnd(15) + 'Best Provider'.padEnd(20) + 'Worst Provider'.padEnd(20) + 'Gap'.padEnd(10) + 'Coverage');
-    console.log('-'.repeat(100));
+    // Print regional comparison table with updated headers
+    console.log('\nRegional Performance Comparison (Fiber Internet Market):');
+    console.log('-'.repeat(140));
+    console.log('Region'.padEnd(25) + 'Avg Score'.padEnd(15) + 'Best Provider'.padEnd(20) + 'Worst Provider'.padEnd(20) + 'Gap'.padEnd(10) + 'Coverage'.padEnd(10) + 'Service Types');
+    console.log('-'.repeat(140));
     
-    regionalStats.forEach(({ region, avgScore, bestProvider, worstProvider, performanceGap, providerCount, totalProviders }) => {
+    regionalStats.forEach(({ region, avgScore, bestProvider, worstProvider, performanceGap, providerCount, totalProviders, serviceTypes }) => {
       const { rating, color } = getRating(avgScore);
       console.log(
-        region.padEnd(15) +
+        region.padEnd(25) +
         `${color}${avgScore}/100\x1b[0m`.padEnd(15) +
         bestProvider.name.padEnd(20) +
         worstProvider.name.padEnd(20) +
         `${performanceGap}pts`.padEnd(10) +
-        `${providerCount}/${totalProviders}`
+        `${providerCount}/${totalProviders}`.padEnd(10) +
+        serviceTypes.join(', ')
       );
+    });
+
+    // Add market focus analysis
+    console.log('\n📊 MARKET FOCUS ANALYSIS');
+    console.log('-'.repeat(40));
+    COMPETITORS.forEach(competitor => {
+      console.log(`\n${competitor.name}:`);
+      console.log(`  • Service Type: ${competitor.serviceType}`);
+      console.log(`  • Market Focus: ${competitor.marketFocus}`);
+      console.log(`  • Coverage: ${competitor.region.join(', ')}`);
     });
 
     // Key Regional Insights
@@ -386,6 +539,47 @@ test.describe('Competitor Performance Analysis', () => {
       const advantages = getCompetitiveAdvantages(alloResult, results);
       advantages.forEach(adv => console.log(`  • ${adv}`));
     }
+
+    // Add service comparison analysis
+    console.log('\n📊 SERVICE COMPARISON ANALYSIS');
+    console.log('-'.repeat(40));
+    
+    const alloServices = {
+      fiberInternet: true,
+      fiberTV: true,
+      fiberPhone: true,
+      mobilePhone: true,
+      smartTown: true,
+      wifiExperience: true,
+      outdoorWifi: true,
+      fiberStreaming: true,
+      bark: true
+    };
+
+    console.log('\nALLO Services:');
+    Object.entries(alloServices).forEach(([service, available]) => {
+      if (available) {
+        console.log(`  • ${service.replace(/([A-Z])/g, ' $1').trim()}`);
+      }
+    });
+
+    console.log('\nCompetitor Service Comparison:');
+    COMPETITORS.forEach(competitor => {
+      console.log(`\n${competitor.name}:`);
+      Object.entries(competitor.services).forEach(([service, available]) => {
+        const serviceName = service.replace(/([A-Z])/g, ' $1').trim();
+        console.log(`  • ${serviceName}: ${available ? '✓' : '✗'}`);
+      });
+      
+      // Calculate service match percentage
+      const matchingServices = Object.entries(competitor.services)
+        .filter(([service, available]) => available && alloServices[service as keyof typeof alloServices])
+        .length;
+      const totalServices = Object.keys(alloServices).length;
+      const matchPercentage = (matchingServices / totalServices) * 100;
+      
+      console.log(`  Service Match: ${matchPercentage.toFixed(1)}% of ALLO services`);
+    });
   });
 });
 
