@@ -1,4 +1,4 @@
-import { test, expect, BrowserContext, Page } from '@playwright/test';
+import { test, expect, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { BENCHMARKS } from './constants';
 import { printTestHeader, printTestFooter } from './utils';
 
@@ -14,14 +14,8 @@ interface TBTDetails {
   totalTBT: number;
   tasks: Array<{
     name: string;
-  duration: number;
-  startTime: number;
-  resourceType?: string;
-  resourceUrl?: string;
-    scriptUrl?: string;
-    lineNumber?: number;
-    columnNumber?: number;
-    stackTrace?: string;
+    duration: number;
+    startTime: number;
   }>;
   resourceTiming: Array<{
     name: string;
@@ -174,192 +168,283 @@ function printTestInsights(metrics: any, testType: '3G' | 'CPU' | 'concurrent' |
   }
 }
 
-function printTestExecutionStatus(testType: string, status: 'started' | 'completed' | 'failed', error?: string) {
+function printTestExecutionStatus(testInfo: TestInfo, testType: string, status: 'started' | 'completed' | 'failed', error?: string) {
   const timestamp = new Date().toISOString();
-  console.log(`\nTest Execution Status: ${testType}`);
-  console.log(`Timestamp: ${timestamp}`);
-  console.log(`Status: ${status.toUpperCase()}`);
-  if (error) {
-    console.log(`Error: ${error}`);
-  }
-  console.log('-'.repeat(80));
+  testInfo.annotations.push({ type: 'test_status', description: `${testType} - ${status}` });
+  
+  const output = [
+    `\nTest Execution Status: ${testType}`,
+    `Timestamp: ${timestamp}`,
+    `Status: ${status.toUpperCase()}`,
+    ...(error ? [`Error: ${error}`] : []),
+    '-'.repeat(80)
+  ].join('\n');
+  
+  console.log(output);
+  testInfo.attachments.push({
+    name: `${testType.toLowerCase().replace(/\s+/g, '-')}-status`,
+    contentType: 'text/plain',
+    body: Buffer.from(output)
+  });
 }
 
-function printTestSummary(testType: string, metrics: any, error?: string) {
-  console.log(`\n📊 ${testType} Test Summary`);
-  console.log('-'.repeat(80));
+function printTestSummary(testInfo: TestInfo, testType: string, metrics: any, error?: string) {
+  const output = [
+    `\n📊 ${testType} Test Summary`,
+    '-'.repeat(80),
+    error ? [
+      '❌ Test Failed',
+      `Error: ${error}`,
+      '\nPossible Issues:',
+      ...getPossibleIssues(testType)
+    ] : [
+      '✅ Test Completed',
+      '\nCollected Metrics:',
+      ...formatMetrics(testType, metrics)
+    ],
+    '\nTest Environment:',
+    `• Browser: ${process.env.BROWSER || 'Chromium'}`,
+    `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
+    `• Network: ${testType === '3G Network' ? '3G Simulated' : 'Default'}`,
+    `• CPU: ${testType === 'CPU Throttling' ? 'Throttled' : 'Default'}`,
+    '-'.repeat(80)
+  ].join('\n');
   
-  if (error) {
-    console.log('❌ Test Failed');
-    console.log(`Error: ${error}`);
-    console.log('\nPossible Issues:');
-    switch (testType) {
-      case '3G Network':
-        console.log('- Network connectivity issues');
-        console.log('- Server response timeouts');
-        console.log('- Resource loading failures');
-        break;
-      case 'CPU Throttling':
-        console.log('- JavaScript execution errors');
-        console.log('- Resource processing timeouts');
-        console.log('- Browser performance limitations');
-        break;
-      case 'Homepage':
-        console.log('- Page load failures');
-        console.log('- Resource loading issues');
-        console.log('- Performance metric collection errors');
-        break;
-    }
-  } else {
-    console.log('✅ Test Completed');
-    console.log('\nCollected Metrics:');
-    switch (testType) {
-      case '3G Network':
-        console.log(`• Load Time: ${metrics?.loadTime ? metrics.loadTime + 'ms' : 'Not collected'}`);
-        console.log(`• Resource Count: ${metrics?.resources || 'Not collected'}`);
-        console.log(`• Memory Usage: ${metrics?.memoryMB ? metrics.memoryMB.toFixed(2) + 'MB' : 'Not collected'}`);
-        break;
-      case 'CPU Throttling':
-        console.log(`• Load Time: ${metrics?.loadTime ? metrics.loadTime + 'ms' : 'Not collected'}`);
-        console.log(`• JS Execution: ${metrics?.jsExecutionTime ? metrics.jsExecutionTime.toFixed(0) + 'ms' : 'Not collected'}`);
-        console.log(`• Long Tasks: ${metrics?.longTasks?.length || 0}`);
-        break;
-      case 'Homepage':
-        console.log(`• LCP: ${metrics?.lcp ? metrics.lcp + 'ms' : 'Not collected'}`);
-        console.log(`• TBT: ${metrics?.totalTBT ? metrics.totalTBT.toFixed(0) + 'ms' : 'Not collected'}`);
-        console.log(`• Resource Count: ${metrics?.resourceCount || 'Not collected'}`);
-        break;
-    }
+  console.log(output);
+  testInfo.attachments.push({
+    name: `${testType.toLowerCase().replace(/\s+/g, '-')}-summary`,
+    contentType: 'text/plain',
+    body: Buffer.from(output)
+  });
+}
+
+function getPossibleIssues(testType: string): string[] {
+  switch (testType) {
+    case '3G Network':
+      return [
+        '- Network connectivity issues',
+        '- Server response timeouts',
+        '- Resource loading failures'
+      ];
+    case 'CPU Throttling':
+      return [
+        '- JavaScript execution errors',
+        '- Resource processing timeouts',
+        '- Browser performance limitations'
+      ];
+    case 'Homepage':
+      return [
+        '- Page load failures',
+        '- Resource loading issues',
+        '- Performance metric collection errors'
+      ];
+    case 'Concurrent Users':
+      return [
+        '- Server capacity issues',
+        '- Resource contention',
+        '- Connection pool exhaustion'
+      ];
+    case 'Memory Pressure':
+      return [
+        '- Memory allocation failures',
+        '- Browser performance limitations',
+        '- Resource exhaustion'
+      ];
+    default:
+      return ['- Unknown test failure'];
   }
-  
-  console.log('\nTest Environment:');
-  console.log(`• Browser: ${process.env.BROWSER || 'Chromium'}`);
-  console.log(`• Viewport: ${process.env.VIEWPORT || 'Default'}`);
-  console.log(`• Network: ${testType === '3G Network' ? '3G Simulated' : 'Default'}`);
-  console.log(`• CPU: ${testType === 'CPU Throttling' ? 'Throttled' : 'Default'}`);
-  console.log('-'.repeat(80));
+}
+
+function formatMetrics(testType: string, metrics: any): string[] {
+  switch (testType) {
+    case '3G Network':
+      return [
+        `• Load Time: ${metrics?.loadTime ? metrics.loadTime + 'ms' : 'Not collected'}`,
+        `• Resource Count: ${metrics?.resources || 'Not collected'}`,
+        `• Memory Usage: ${metrics?.memoryMB ? metrics.memoryMB.toFixed(2) + 'MB' : 'Not collected'}`
+      ];
+    case 'CPU Throttling':
+      return [
+        `• Load Time: ${metrics?.loadTime ? metrics.loadTime + 'ms' : 'Not collected'}`,
+        `• JS Execution: ${metrics?.jsExecutionTime ? metrics.jsExecutionTime.toFixed(0) + 'ms' : 'Not collected'}`,
+        `• Long Tasks: ${metrics?.longTasks?.length || 0}`
+      ];
+    case 'Homepage':
+      return [
+        `• LCP: ${metrics?.lcp ? metrics.lcp + 'ms' : 'Not collected'}`,
+        `• TBT: ${metrics?.totalTBT ? metrics.totalTBT.toFixed(0) + 'ms' : 'Not collected'}`,
+        `• Resource Count: ${metrics?.resourceCount || 'Not collected'}`
+      ];
+    case 'Concurrent Users':
+      return [
+        `• Average Load Time: ${metrics?.avgLoadTime ? metrics.avgLoadTime.toFixed(0) + 'ms' : 'Not collected'}`,
+        `• Error Rate: ${metrics?.errorRate ? (metrics.errorRate * 100).toFixed(1) + '%' : 'Not collected'}`,
+        `• Resource Contention: ${metrics?.resourceContention ? metrics.resourceContention.toFixed(1) + '%' : 'Not collected'}`
+      ];
+    case 'Memory Pressure':
+      return [
+        `• Heap Growth: ${metrics?.heapGrowth ? metrics.heapGrowth.toFixed(2) + 'MB' : 'Not collected'}`,
+        `• DOM Nodes: ${metrics?.domNodes || 'Not collected'}`,
+        `• Event Listeners: ${metrics?.eventListeners || 'Not collected'}`
+      ];
+    default:
+      return ['No metrics collected'];
+  }
 }
 
 test.describe('Performance Tests', () => {
   const url = 'https://www.allocommunications.com/';
 
-  test('Homepage Performance', async ({ page, context }) => {
-    printTestExecutionStatus('Homepage Performance Test', 'started');
+  test('Homepage Performance', async ({ page, context }, testInfo) => {
+    await test.step('Initialize test', async () => {
+      testInfo.annotations.push({ type: 'test_type', description: 'Homepage Performance Test' });
+      console.log('\n🧪 Starting Homepage Performance Test');
+    });
+
     let metrics: any = {};
     let error: string | undefined;
     
     try {
-      // Enable performance monitoring
-      await context.route('**/*', async route => {
-        const request = route.request();
-        // Add custom header to track resource timing
-        const headers = { ...request.headers(), 'x-performance-tracking': 'true' };
-        await route.continue({ headers });
+      await test.step('Enable performance monitoring', async () => {
+        await context.route('**/*', async route => {
+          const request = route.request();
+          const headers = { ...request.headers(), 'x-performance-tracking': 'true' };
+          await route.continue({ headers });
+        });
       });
-      
-      // Navigate to the homepage with retry logic
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      while (retryCount < maxRetries) {
-        try {
-          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-          break;
-        } catch (error) {
-          retryCount++;
-          if (retryCount === maxRetries) {
-            throw error;
+
+      await test.step('Navigate to homepage', async () => {
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+            break;
+          } catch (error) {
+            retryCount++;
+            if (retryCount === maxRetries) {
+              throw error;
+            }
+            testInfo.annotations.push({ type: 'retry', description: `Retry ${retryCount}/${maxRetries}` });
+            await page.waitForTimeout(2000);
           }
-          console.log(`Retry ${retryCount}/${maxRetries} for homepage...`);
-          await page.waitForTimeout(2000);
         }
-      }
-
-      // Collect LCP details
-      const lcpDetails: LCPDetails = await page.evaluate(() => {
-        const entries = performance.getEntriesByType('largest-contentful-paint');
-        const lastEntry = entries[entries.length - 1] as any;
-        const element = lastEntry?.element?.tagName || 'unknown';
-        const size = lastEntry?.size || 0;
-        const url = lastEntry?.url || '';
-        return {
-          lcp: lastEntry?.startTime || 0,
-          element,
-          size,
-          url,
-          timestamp: lastEntry?.startTime || 0
-        };
       });
 
-      // Collect TBT details with enhanced metrics
-      const tbtDetails: TBTDetails = await page.evaluate(() => {
-        // Get long tasks
-        const longTasks = performance.getEntriesByType('longtask').map(task => {
-          const stack = (task as any).attribution?.[0] || {};
+      await test.step('Collect LCP details', async () => {
+        const lcpDetails: LCPDetails = await page.evaluate(() => {
+          const entries = performance.getEntriesByType('largest-contentful-paint');
+          const lastEntry = entries[entries.length - 1] as any;
           return {
+            lcp: lastEntry?.startTime || 0,
+            element: lastEntry?.element?.tagName || 'unknown',
+            size: lastEntry?.size || 0,
+            url: lastEntry?.url || '',
+            timestamp: lastEntry?.startTime || 0
+          };
+        });
+        metrics.lcp = lcpDetails.lcp;
+        testInfo.annotations.push({ type: 'metric', description: `LCP: ${lcpDetails.lcp}ms` });
+      });
+
+      await test.step('Collect TBT details', async () => {
+        const tbtDetails: TBTDetails = await page.evaluate(() => {
+          const longTasks = performance.getEntriesByType('longtask').map(task => ({
             name: task.name,
             duration: task.duration,
-            startTime: task.startTime,
-            resourceType: stack.containerType,
-            resourceUrl: stack.containerSrc,
-            scriptUrl: stack.containerName,
-            lineNumber: stack.lineNumber,
-            columnNumber: stack.columnNumber,
-            stackTrace: stack.stackTrace
-          };
-        });
+            startTime: task.startTime
+          }));
 
-        // Get resource timing
-        const resources = performance.getEntriesByType('resource').map(resource => {
-          const timing = resource as PerformanceResourceTiming;
+          const resources = performance.getEntriesByType('resource').map(resource => {
+            const timing = resource as PerformanceResourceTiming;
+            return {
+              name: timing.name,
+              url: timing.name,
+              type: timing.initiatorType,
+              duration: timing.duration,
+              startTime: timing.startTime,
+              transferSize: timing.transferSize,
+              encodedBodySize: timing.encodedBodySize,
+              decodedBodySize: timing.decodedBodySize,
+              initiatorType: timing.initiatorType,
+              nextHopProtocol: timing.nextHopProtocol
+            };
+          });
+
           return {
-            name: timing.name,
-            url: timing.name,
-            type: timing.initiatorType,
-            duration: timing.duration,
-            startTime: timing.startTime,
-            transferSize: timing.transferSize,
-            encodedBodySize: timing.encodedBodySize,
-            decodedBodySize: timing.decodedBodySize,
-            initiatorType: timing.initiatorType,
-            nextHopProtocol: timing.nextHopProtocol
+            totalTBT: longTasks.reduce((sum, task) => sum + task.duration, 0),
+            tasks: longTasks,
+            resourceTiming: resources
           };
         });
-
-        // Calculate total blocking time
-        const totalTBT = longTasks.reduce((sum, task) => sum + task.duration, 0);
-
-        return {
-          totalTBT,
-          tasks: longTasks,
-          resourceTiming: resources
-        };
+        metrics.totalTBT = tbtDetails.totalTBT;
+        metrics.resourceCount = tbtDetails.resourceTiming.length;
+        testInfo.annotations.push({ type: 'metric', description: `TBT: ${tbtDetails.totalTBT}ms` });
       });
 
-      // Collect metrics
-      metrics = {
-        lcp: lcpDetails.lcp,
-        totalTBT: tbtDetails.totalTBT,
-        resourceCount: tbtDetails.resourceTiming.length
-      };
+      await test.step('Print test summary', async () => {
+        const output = [
+          '\n📊 Homepage Performance Summary',
+          '-'.repeat(80),
+          '✅ Test Completed',
+          '\nCollected Metrics:',
+          `• LCP: ${metrics.lcp}ms`,
+          `• TBT: ${metrics.totalTBT.toFixed(0)}ms`,
+          `• Resource Count: ${metrics.resourceCount}`,
+          '\nTest Environment:',
+          `• Browser: ${process.env.BROWSER || 'Chromium'}`,
+          `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
+          `• Network: Default`,
+          '-'.repeat(80)
+        ].join('\n');
+        
+        console.log(output);
+        testInfo.attachments.push({
+          name: 'homepage-performance-summary',
+          contentType: 'text/plain',
+          body: Buffer.from(output)
+        });
+      });
 
-      printTestSummary('Homepage', metrics);
-      printTestInsights({ lcp: lcpDetails.lcp }, 'LCP');
-      printTestInsights({ totalTBT: tbtDetails.totalTBT }, 'TBT');
-      
     } catch (err) {
       error = err.message;
-      printTestSummary('Homepage', metrics, error);
+      await test.step('Handle test failure', async () => {
+        const output = [
+          '\n❌ Homepage Performance Test Failed',
+          '-'.repeat(80),
+          `Error: ${error}`,
+          '\nPossible Issues:',
+          '- Page load failures',
+          '- Resource loading issues',
+          '- Performance metric collection errors',
+          '\nTest Environment:',
+          `• Browser: ${process.env.BROWSER || 'Chromium'}`,
+          `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
+          `• Network: Default`,
+          '-'.repeat(80)
+        ].join('\n');
+        
+        console.log(output);
+        testInfo.attachments.push({
+          name: 'homepage-performance-error',
+          contentType: 'text/plain',
+          body: Buffer.from(output)
+        });
+      });
     } finally {
-      printTestExecutionStatus('Homepage Performance Test', error ? 'failed' : 'completed', error);
-      printTestFooter();
+      await test.step('Finalize test', async () => {
+        const status = error ? 'failed' : 'completed';
+        testInfo.annotations.push({ type: 'test_status', description: `Homepage Performance Test - ${status}` });
+        console.log(`\n🧪 Homepage Performance Test ${status.toUpperCase()}`);
+      });
     }
   });
 
   // Stress test scenarios
   test.describe('Stress Tests', () => {
     test('Performance under 3G network conditions', async ({ browser }, testInfo) => {
-      printTestExecutionStatus('3G Network Performance Test', 'started');
+      printTestExecutionStatus(testInfo, '3G Network Performance Test', 'started');
       let metrics: any = {};
       let error: string | undefined;
       
@@ -429,14 +514,14 @@ test.describe('Performance Tests', () => {
           memoryMB
         };
 
-        printTestSummary('3G Network', metrics);
+        printTestSummary(testInfo, '3G Network', metrics);
         printTestInsights(metrics, '3G');
         
       } catch (err) {
         error = err.message;
-        printTestSummary('3G Network', metrics, error);
+        printTestSummary(testInfo, '3G Network', metrics, error);
       } finally {
-        printTestExecutionStatus('3G Network Performance Test', error ? 'failed' : 'completed', error);
+        printTestExecutionStatus(testInfo, '3G Network Performance Test', error ? 'failed' : 'completed', error);
         if (context) {
           await context.close();
         }
@@ -446,7 +531,7 @@ test.describe('Performance Tests', () => {
     });
 
     test('Performance under CPU throttling', async ({ browser }, testInfo) => {
-      printTestExecutionStatus('CPU Throttling Performance Test', 'started');
+      printTestExecutionStatus(testInfo, 'CPU Throttling Performance Test', 'started');
       let metrics: any = {};
       let error: string | undefined;
       
@@ -524,14 +609,14 @@ test.describe('Performance Tests', () => {
           longTasks
         };
 
-        printTestSummary('CPU Throttling', metrics);
+        printTestSummary(testInfo, 'CPU Throttling', metrics);
         printTestInsights(metrics, 'CPU');
         
       } catch (err) {
         error = err.message;
-        printTestSummary('CPU Throttling', metrics, error);
+        printTestSummary(testInfo, 'CPU Throttling', metrics, error);
       } finally {
-        printTestExecutionStatus('CPU Throttling Performance Test', error ? 'failed' : 'completed', error);
+        printTestExecutionStatus(testInfo, 'CPU Throttling Performance Test', error ? 'failed' : 'completed', error);
         if (context) {
           await context.close();
         }
@@ -541,7 +626,7 @@ test.describe('Performance Tests', () => {
     });
 
     test('Performance under concurrent user load', async ({ browser }, testInfo) => {
-      printTestExecutionStatus('Concurrent Users Performance Test', 'started');
+      printTestExecutionStatus(testInfo, 'Concurrent Users Performance Test', 'started');
       let metrics: any = {};
       let error: string | undefined;
       
@@ -592,15 +677,15 @@ test.describe('Performance Tests', () => {
         resourceContention
       };
 
-      printTestSummary('Concurrent Users', metrics);
+      printTestSummary(testInfo, 'Concurrent Users', metrics);
       printTestInsights(metrics, 'concurrent');
       
-      printTestExecutionStatus('Concurrent Users Performance Test', error ? 'failed' : 'completed', error);
+      printTestExecutionStatus(testInfo, 'Concurrent Users Performance Test', error ? 'failed' : 'completed', error);
       printTestFooter();
     });
 
     test('Performance under memory pressure', async ({ browser }, testInfo) => {
-      printTestExecutionStatus('Memory Pressure Performance Test', 'started');
+      printTestExecutionStatus(testInfo, 'Memory Pressure Performance Test', 'started');
       let metrics: any = {};
       let error: string | undefined;
       let context: BrowserContext | null = null;
@@ -727,17 +812,17 @@ test.describe('Performance Tests', () => {
           console.log('- Check for duplicate event bindings');
         }
         
-        printTestSummary('Memory Pressure', metrics);
+        printTestSummary(testInfo, 'Memory Pressure', metrics);
         printTestInsights(metrics, 'memory');
         
       } catch (err) {
         error = err.message;
-        printTestSummary('Memory Pressure', metrics, error);
+        printTestSummary(testInfo, 'Memory Pressure', metrics, error);
       } finally {
         if (context) {
           await context.close();
         }
-        printTestExecutionStatus('Memory Pressure Performance Test', error ? 'failed' : 'completed', error);
+        printTestExecutionStatus(testInfo, 'Memory Pressure Performance Test', error ? 'failed' : 'completed', error);
         printTestFooter();
       }
     });

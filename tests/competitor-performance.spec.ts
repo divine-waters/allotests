@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { THRESHOLDS, COMPETITORS } from './constants';
-import { calculateScore, getRating, getMetricStatus, printTestHeader, printTestFooter } from './utils';
+import { getRating, getMetricStatus, printTestHeader, printTestFooter } from './utils';
 import type { CompetitorSite } from './types';
 
 // Add interface for LayoutShift entry
@@ -114,297 +114,307 @@ function printCompetitorInsights(metrics: PerformanceMetrics, competitor: Compet
   }
 }
 
-function printCompetitorTestStatus(competitor: CompetitorSite, status: 'started' | 'completed' | 'failed', error?: string) {
+function printCompetitorTestStatus(testInfo: TestInfo, competitor: string, status: 'started' | 'completed' | 'failed', error?: string) {
   const timestamp = new Date().toISOString();
-  console.log(`\nCompetitor Test Status: ${competitor.name}`);
-  console.log(`Timestamp: ${timestamp}`);
-  console.log(`Status: ${status.toUpperCase()}`);
-  console.log(`URL: ${competitor.url}`);
-  if (error) {
-    console.log(`Error: ${error}`);
-  }
-  console.log('-'.repeat(80));
+  testInfo.annotations.push({ type: 'competitor_status', description: `${competitor} - ${status}` });
+  
+  const output = [
+    `\nCompetitor Test Status: ${competitor}`,
+    `Timestamp: ${timestamp}`,
+    `Status: ${status.toUpperCase()}`,
+    `URL: ${COMPETITORS.find(c => c.name === competitor)?.url || 'Unknown'}`,
+    ...(error ? [`Error: ${error}`] : []),
+    '-'.repeat(80)
+  ].join('\n');
+  
+  console.log(output);
+  testInfo.attachments.push({
+    name: `${competitor.toLowerCase().replace(/\s+/g, '-')}-status`,
+    contentType: 'text/plain',
+    body: Buffer.from(output)
+  });
 }
 
-function printCompetitorSummary(competitor: CompetitorSite, metrics: PerformanceMetrics | null, error?: string) {
-  console.log(`\n📊 ${competitor.name} Test Summary`);
-  console.log('-'.repeat(80));
+function printCompetitorSummary(testInfo: TestInfo, competitor: string, metrics: any, error?: string) {
+  const competitorInfo = COMPETITORS.find(c => c.name === competitor);
+  const output = [
+    `\n📊 ${competitor} Performance Summary`,
+    '-'.repeat(80),
+    `Region: ${competitorInfo?.region || 'Unknown'}`,
+    `Service Type: ${competitorInfo?.serviceType || 'Unknown'}`,
+    `Market Focus: ${competitorInfo?.marketFocus || 'Unknown'}`,
+    ...(error ? [
+      '❌ Test Failed',
+      `Error: ${error}`,
+      '\nPossible Issues:',
+      '- Network connectivity issues',
+      '- Server response timeouts',
+      '- Resource loading failures',
+      '- Browser compatibility issues'
+    ] : [
+      '✅ Test Completed',
+      '\nCollected Metrics:',
+      `• LCP: ${metrics?.lcp ? metrics.lcp + 'ms' : 'Not collected'}`,
+      `• CLS: ${metrics?.cls ? metrics.cls.toFixed(3) : 'Not collected'}`,
+      `• TTFB: ${metrics?.ttfb ? metrics.ttfb + 'ms' : 'Not collected'}`,
+      `• TBT: ${metrics?.tbt ? metrics.tbt.toFixed(0) + 'ms' : 'Not collected'}`,
+      `• Resource Count: ${metrics?.resourceCount || 'Not collected'}`,
+      `• DOM Size: ${metrics?.domSize || 'Not collected'}`,
+      `• JS Heap Size: ${metrics?.jsHeapSize ? (metrics.jsHeapSize / (1024 * 1024)).toFixed(2) + 'MB' : 'Not collected'}`
+    ]),
+    '\nTest Environment:',
+    `• Browser: ${process.env.BROWSER || 'Chromium'}`,
+    `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
+    `• Network: Default`,
+    '-'.repeat(80)
+  ].join('\n');
   
-  if (error) {
-    console.log('❌ Test Failed');
-    console.log(`Error: ${error}`);
-    console.log('\nPossible Issues:');
-    console.log('- Network connectivity problems');
-    console.log('- Server response timeouts');
-    console.log('- Resource loading failures');
-    console.log('- Performance metric collection errors');
-  } else if (metrics) {
-    console.log('✅ Test Completed');
-    console.log('\nCollected Metrics:');
-    console.log(`• LCP: ${metrics.lcp ? metrics.lcp.toFixed(0) + 'ms' : 'Not collected'}`);
-    console.log(`• CLS: ${metrics.cls ? metrics.cls.toFixed(3) : 'Not collected'}`);
-    console.log(`• TTFB: ${metrics.ttfb ? metrics.ttfb.toFixed(0) + 'ms' : 'Not collected'}`);
-    console.log(`• TBT: ${metrics.tbt ? metrics.tbt.toFixed(0) + 'ms' : 'Not collected'}`);
-    console.log(`• Resources: ${metrics.resourceCount || 'Not collected'}`);
-    console.log(`• DOM Size: ${metrics.domSize || 'Not collected'} nodes`);
-    console.log(`• JS Heap: ${metrics.jsHeapSize ? (metrics.jsHeapSize / (1024 * 1024)).toFixed(1) + 'MB' : 'Not collected'}`);
-  } else {
-    console.log('⚠️ Test Incomplete');
-    console.log('No metrics were collected');
-  }
-  
-  console.log('\nTest Environment:');
-  console.log(`• Browser: ${process.env.BROWSER || 'Chromium'}`);
-  console.log(`• Viewport: ${process.env.VIEWPORT || 'Default'}`);
-  console.log(`• Region: ${competitor.region.join(', ')}`);
-  console.log(`• Service Type: ${competitor.serviceType}`);
-  console.log(`• Market Focus: ${competitor.marketFocus}`);
-  console.log('-'.repeat(80));
+  console.log(output);
+  testInfo.attachments.push({
+    name: `${competitor.toLowerCase().replace(/\s+/g, '-')}-summary`,
+    contentType: 'text/plain',
+    body: Buffer.from(output)
+  });
 }
 
 test.describe('Competitor Performance Analysis', () => {
-  const results: TestResult[] = [];
+  const results: Array<{ competitor: string; metrics: any; error?: string }> = [];
 
   for (const competitor of COMPETITORS) {
-    test(`Performance test for ${competitor.name}`, async ({ page }, testInfo) => {
-      printCompetitorTestStatus(competitor, 'started');
-      let metrics: PerformanceMetrics | null = null;
+    test(`Analyze ${competitor.name} performance`, async ({ browser }, testInfo) => {
+      await test.step('Initialize test', async () => {
+        testInfo.annotations.push({ type: 'test_type', description: `Competitor Analysis - ${competitor.name}` });
+        console.log(`\n🧪 Starting Competitor Analysis for ${competitor.name}`);
+      });
+
+      let metrics: any = {};
       let error: string | undefined;
+      let context: BrowserContext | null = null;
       
       try {
-        // Navigate to the page with retry logic
-        let retryCount = 0;
-        const maxRetries = 3;
-        
-        while (retryCount < maxRetries) {
-          try {
-            await page.goto(competitor.url, { 
-              waitUntil: 'domcontentloaded',
-              timeout: 30000 // Increased timeout to 30 seconds
-            });
-            await page.waitForLoadState('load', { timeout: 15000 });
-            break;
-          } catch (error) {
-            retryCount++;
-            if (retryCount === maxRetries) {
-              throw error;
-            }
-            console.log(`Retry ${retryCount}/${maxRetries} for ${competitor.name}...`);
-            await page.waitForTimeout(2000); // Wait 2 seconds before retry
-          }
-        }
-        
-        // Collect comprehensive metrics with proper error handling
-        metrics = await Promise.race([
-          page.evaluate(() => {
-            return new Promise<PerformanceMetrics>((resolve) => {
-              let lcp = 0;
-              let cls = 0;
-              let ttfb = 0;
-              let tbt = 0;
-              let resourceCount = 0;
-              let domSize = 0;
-              let jsHeapSize = 0;
-              let totalLoadTime = 0;
-              
-              // LCP
-              new PerformanceObserver((entryList) => {
-                const entries = entryList.getEntries();
-                if (entries.length > 0) {
-                  lcp = entries[entries.length - 1].startTime;
-                }
-              }).observe({ type: 'largest-contentful-paint', buffered: true });
-
-              // CLS
-              new PerformanceObserver((entryList) => {
-                for (const entry of entryList.getEntries()) {
-                  const layoutShift = entry as LayoutShift;
-                  if (!layoutShift.hadRecentInput) {
-                    cls += layoutShift.value;
-                  }
-                }
-              }).observe({ type: 'layout-shift', buffered: true });
-
-              // TBT
-              new PerformanceObserver((entryList) => {
-                for (const entry of entryList.getEntries()) {
-                  tbt += entry.duration;
-                }
-              }).observe({ type: 'longtask', buffered: true });
-
-              // TTFB and other metrics
-              const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-              if (navEntry) {
-                ttfb = navEntry.responseStart - navEntry.requestStart;
-                totalLoadTime = navEntry.loadEventEnd - navEntry.startTime;
+        await test.step('Setup browser context', async () => {
+          context = await browser.newContext();
+          const page = await context.newPage();
+          
+          // Navigate with retry logic
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          while (retryCount < maxRetries) {
+            try {
+              await page.goto(competitor.url, { waitUntil: 'networkidle', timeout: 30000 });
+              break;
+            } catch (err) {
+              retryCount++;
+              if (retryCount === maxRetries) {
+                throw err;
               }
+              testInfo.annotations.push({ type: 'retry', description: `Retry ${retryCount}/${maxRetries}` });
+              await page.waitForTimeout(2000);
+            }
+          }
 
-              // Resource count and DOM size
-              resourceCount = performance.getEntriesByType('resource').length;
-              domSize = document.getElementsByTagName('*').length;
-              jsHeapSize = (performance as any).memory?.usedJSHeapSize || 0;
-
-              // Resolve after 5 seconds to ensure we capture all metrics
-              setTimeout(() => resolve({
-                lcp,
-                cls,
-                ttfb,
-                tbt,
-                resourceCount,
-                domSize,
-                jsHeapSize,
-                totalLoadTime
-              }), 5000);
+          await test.step('Collect performance metrics', async () => {
+            metrics = await page.evaluate(() => {
+              const memory = (performance as any).memory;
+              const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+              return {
+                lcp: performance.getEntriesByType('largest-contentful-paint')[0]?.startTime || 0,
+                cls: performance.getEntriesByType('layout-shift').reduce((sum, entry) => sum + (entry as any).value, 0),
+                ttfb: navEntry?.responseStart || 0,
+                tbt: performance.getEntriesByType('longtask').reduce((sum, task) => sum + task.duration, 0),
+                resourceCount: performance.getEntriesByType('resource').length,
+                domSize: document.getElementsByTagName('*').length,
+                jsHeapSize: memory?.usedJSHeapSize || 0
+              };
             });
-          }),
-          new Promise<PerformanceMetrics>((_, reject) => 
-            setTimeout(() => reject(new Error('Metrics collection timeout')), 10000)
-          )
-        ]).catch((error) => {
-          console.log(`Warning: Metrics collection failed for ${competitor.name}: ${error.message}`);
-          return {
-            lcp: 0,
-            cls: 0,
-            ttfb: 0,
-            tbt: 0,
-            resourceCount: 0,
-            domSize: 0,
-            jsHeapSize: 0,
-            totalLoadTime: 0
-          };
-        });
 
-        // Calculate score and rating
-        const score = calculateScore(metrics);
-        const { rating } = getRating(score);
-        
-        // Add result to array
-        results.push({
-          name: competitor.name,
-          metrics,
-          score,
-          rating
-        });
+            // Add metrics as annotations
+            testInfo.annotations.push(
+              { type: 'metric', description: `LCP: ${metrics.lcp}ms` },
+              { type: 'metric', description: `CLS: ${metrics.cls.toFixed(3)}` },
+              { type: 'metric', description: `TTFB: ${metrics.ttfb}ms` },
+              { type: 'metric', description: `TBT: ${metrics.tbt.toFixed(0)}ms` }
+            );
+          });
 
-        // Print insights
-        if (metrics) {
-          printCompetitorSummary(competitor, metrics);
-          printCompetitorInsights(metrics, competitor);
-        }
+          await test.step('Print competitor summary', async () => {
+            const competitorInfo = COMPETITORS.find(c => c.name === competitor.name);
+            const output = [
+              `\n📊 ${competitor.name} Performance Summary`,
+              '-'.repeat(80),
+              '✅ Test Completed',
+              `Region: ${competitorInfo?.region || 'Unknown'}`,
+              `Service Type: ${competitorInfo?.serviceType || 'Unknown'}`,
+              `Market Focus: ${competitorInfo?.marketFocus || 'Unknown'}`,
+              '\nCollected Metrics:',
+              `• LCP: ${metrics.lcp}ms`,
+              `• CLS: ${metrics.cls.toFixed(3)}`,
+              `• TTFB: ${metrics.ttfb}ms`,
+              `• TBT: ${metrics.tbt.toFixed(0)}ms`,
+              `• Resource Count: ${metrics.resourceCount}`,
+              `• DOM Size: ${metrics.domSize}`,
+              `• JS Heap Size: ${(metrics.jsHeapSize / (1024 * 1024)).toFixed(2)}MB`,
+              '\nTest Environment:',
+              `• Browser: ${process.env.BROWSER || 'Chromium'}`,
+              `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
+              `• Network: Default`,
+              '-'.repeat(80)
+            ].join('\n');
+            
+            console.log(output);
+            testInfo.attachments.push({
+              name: `${competitor.name.toLowerCase().replace(/\s+/g, '-')}-summary`,
+              contentType: 'text/plain',
+              body: Buffer.from(output)
+            });
+          });
+
+          results.push({ competitor: competitor.name, metrics });
+        });
         
       } catch (err) {
         error = err.message;
-        printCompetitorSummary(competitor, metrics, error);
+        await test.step('Handle test failure', async () => {
+          const output = [
+            `\n❌ ${competitor.name} Performance Test Failed`,
+            '-'.repeat(80),
+            `Error: ${error}`,
+            '\nPossible Issues:',
+            '- Network connectivity issues',
+            '- Server response timeouts',
+            '- Resource loading failures',
+            '- Browser compatibility issues',
+            '\nTest Environment:',
+            `• Browser: ${process.env.BROWSER || 'Chromium'}`,
+            `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
+            `• Network: Default`,
+            '-'.repeat(80)
+          ].join('\n');
+          
+          console.log(output);
+          testInfo.attachments.push({
+            name: `${competitor.name.toLowerCase().replace(/\s+/g, '-')}-error`,
+            contentType: 'text/plain',
+            body: Buffer.from(output)
+          });
+          results.push({ competitor: competitor.name, metrics, error });
+        });
       } finally {
-        printCompetitorTestStatus(competitor, error ? 'failed' : 'completed', error);
-        printTestFooter();
+        await test.step('Finalize test', async () => {
+          if (context) {
+            await context.close();
+          }
+          const status = error ? 'failed' : 'completed';
+          testInfo.annotations.push({ type: 'test_status', description: `${competitor.name} - ${status}` });
+          console.log(`\n🧪 ${competitor.name} Analysis ${status.toUpperCase()}`);
+        });
       }
     });
   }
 
-  test.afterAll(async () => {
-    printTestHeader('Competitor Analysis Summary');
-    
-    if (results.length === 0) {
-      console.log('\n⚠️ No test results were collected.');
-      console.log('\nPossible Issues:');
-      console.log('- All tests failed to complete');
-      console.log('- Network connectivity problems');
-      console.log('- Server response timeouts');
-      console.log('- Performance metric collection errors');
-    } else {
-      // Sort results by score in descending order
-      results.sort((a, b) => b.score - a.score);
-
-      printTestHeader('Competitor Performance Rankings');
-      
-      // Performance Rankings
-      results.forEach((result, index) => {
-        const { rating, color } = getRating(result.score);
+  test.afterAll(async ({}, testInfo) => {
+    await test.step('Generate final report', async () => {
+      if (results.length === 0) {
+        const output = [
+          '\n⚠️ No test results were collected',
+          'Possible issues:',
+          '- Network connectivity problems',
+          '- Server response timeouts',
+          '- Browser compatibility issues',
+          '- Resource loading failures',
+          '- Test execution errors'
+        ].join('\n');
         
-        console.log(`\n${index + 1}. ${result.name}`);
-        console.log(`   Score: ${color}${result.score}/100\x1b[0m (${rating})`);
-        console.log(`   LCP: ${result.metrics.lcp.toFixed(0)}ms (${getMetricStatus(result.metrics.lcp, THRESHOLDS.lcp)})`);
-        console.log(`   CLS: ${result.metrics.cls.toFixed(3)} (${getMetricStatus(result.metrics.cls, THRESHOLDS.cls)})`);
-        console.log(`   TTFB: ${result.metrics.ttfb.toFixed(0)}ms (${getMetricStatus(result.metrics.ttfb, THRESHOLDS.ttfb)})`);
-      });
-
-      // Overall Insights
-      console.log('\n💡 Overall Insights:');
-      console.log('-'.repeat(40));
-      
-      // Industry Position
-      const successfulResults = results.filter(r => r.score > 0);
-      if (successfulResults.length > 0) {
-        const avgScore = successfulResults.reduce((sum, r) => sum + r.score, 0) / successfulResults.length;
-        console.log('Industry Position:');
-        if (avgScore >= 90) {
-          console.log('✓ Industry-leading performance');
-          console.log('  • Strong overall metrics');
-          console.log('  • Competitive advantage');
-        } else if (avgScore >= 80) {
-          console.log('✓ Above industry average');
-          console.log('  • Good overall performance');
-          console.log('  • Room for optimization');
-        } else {
-          console.log('⚠️ Below industry average');
-          console.log('  • Performance needs improvement');
-          console.log('  • Focus on critical optimizations');
-        }
-
-        // Competitive Analysis
-        const alloResult = results.find(r => r.name === 'ALLO Communications');
-        if (alloResult && alloResult.score > 0) {
-          console.log('\nALLO Communications Position:');
-          const rank = results.findIndex(r => r.name === 'ALLO Communications') + 1;
-          const total = successfulResults.length;
-          
-          if (rank === 1) {
-            console.log('✓ Leading performance');
-            console.log(`  • Ranked #1 of ${total} competitors`);
-            console.log('  • Industry-leading metrics');
-          } else if (rank <= Math.ceil(total / 2)) {
-            console.log('✓ Above average performance');
-            console.log(`  • Ranked #${rank} of ${total} competitors`);
-            console.log('  • Strong competitive position');
-          } else {
-            console.log('⚠️ Below average performance');
-            console.log(`  • Ranked #${rank} of ${total} competitors`);
-            console.log('  • Needs improvement to compete');
-          }
-
-          // Compare with competitors
-          const competitors = successfulResults.filter(r => r.name !== 'ALLO Communications');
-          if (competitors.length > 0) {
-            console.log('\nKey Differentiators:');
-            competitors.forEach(c => {
-              const metricDiffs = {
-                lcp: alloResult.metrics.lcp - c.metrics.lcp,
-                cls: alloResult.metrics.cls - c.metrics.cls,
-                ttfb: alloResult.metrics.ttfb - c.metrics.ttfb
-              };
-              
-              console.log(`\nvs ${c.name}:`);
-              if (metricDiffs.lcp !== 0) {
-                const diff = Math.abs(metricDiffs.lcp);
-                console.log(`- LCP is ${diff.toFixed(0)}ms ${metricDiffs.lcp < 0 ? 'faster' : 'slower'}`);
-              }
-              if (metricDiffs.cls !== 0) {
-                const diff = Math.abs(metricDiffs.cls);
-                console.log(`- CLS is ${diff.toFixed(3)} ${metricDiffs.cls < 0 ? 'better' : 'worse'}`);
-              }
-              if (metricDiffs.ttfb !== 0) {
-                const diff = Math.abs(metricDiffs.ttfb);
-                console.log(`- TTFB is ${diff.toFixed(0)}ms ${metricDiffs.ttfb < 0 ? 'faster' : 'slower'}`);
-              }
-            });
-          }
-        }
-      } else {
-        console.log('⚠️ No successful test results to analyze');
+        console.log(output);
+        testInfo.attachments.push({
+          name: 'no-results-warning',
+          contentType: 'text/plain',
+          body: Buffer.from(output)
+        });
+        return;
       }
-    }
-    
-    printTestFooter();
+
+      const sortedResults = results
+        .filter(r => !r.error)
+        .map(r => ({
+          ...r,
+          score: calculateScore(r.metrics)
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      const output = [
+        '\n📊 Competitor Performance Rankings',
+        '-'.repeat(80),
+        ...sortedResults.map((r, i) => [
+          `${i + 1}. ${r.competitor}`,
+          `   Score: ${r.score.toFixed(2)}`,
+          `   LCP: ${r.metrics.lcp}ms`,
+          `   CLS: ${r.metrics.cls.toFixed(3)}`,
+          `   TTFB: ${r.metrics.ttfb}ms`,
+          `   TBT: ${r.metrics.tbt.toFixed(0)}ms`
+        ].join('\n')),
+        '\n💡 Performance Insights:',
+        `• Industry Position: ${getIndustryPosition(sortedResults)}`,
+        `• ALLO Rank: ${getALLORank(sortedResults)}`,
+        `• Key Differentiators: ${getKeyDifferentiators(sortedResults)}`,
+        '-'.repeat(80)
+      ].join('\n');
+      
+      console.log(output);
+      testInfo.attachments.push({
+        name: 'competitor-rankings',
+        contentType: 'text/plain',
+        body: Buffer.from(output)
+      });
+    });
   });
-}); 
+});
+
+function calculateScore(metrics: any): number {
+  // Normalize metrics to 0-1 range and calculate weighted average
+  const weights = {
+    lcp: 0.3,
+    cls: 0.3,
+    ttfb: 0.2,
+    tbt: 0.2
+  };
+  
+  const normalized = {
+    lcp: Math.max(0, 1 - (metrics.lcp / 2500)), // 2500ms is poor threshold
+    cls: Math.max(0, 1 - (metrics.cls / 0.25)), // 0.25 is poor threshold
+    ttfb: Math.max(0, 1 - (metrics.ttfb / 600)), // 600ms is poor threshold
+    tbt: Math.max(0, 1 - (metrics.tbt / 300)) // 300ms is poor threshold
+  };
+  
+  return Object.entries(weights).reduce((score, [metric, weight]) => 
+    score + (normalized[metric] * weight), 0) * 100;
+}
+
+function getIndustryPosition(results: Array<{ competitor: string; score: number }>): string {
+  const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
+  if (avgScore >= 80) return 'Leading the industry';
+  if (avgScore >= 60) return 'Competitive in the market';
+  return 'Room for improvement';
+}
+
+function getALLORank(results: Array<{ competitor: string; score: number }>): string {
+  const alloResult = results.find(r => r.competitor === 'ALLO Communications');
+  if (!alloResult) return 'Not ranked';
+  const rank = results.findIndex(r => r.competitor === 'ALLO Communications') + 1;
+  const total = results.length;
+  return `${rank} of ${total} (${alloResult.score.toFixed(1)} score)`;
+}
+
+function getKeyDifferentiators(results: Array<{ competitor: string; metrics: any; score: number }>): string {
+  const alloResult = results.find(r => r.competitor === 'ALLO Communications');
+  if (!alloResult) return 'No data available';
+  
+  const differentiators: string[] = [];
+  if (alloResult.metrics.lcp < 1000) differentiators.push('Fast LCP');
+  if (alloResult.metrics.cls < 0.1) differentiators.push('Low CLS');
+  if (alloResult.metrics.ttfb < 200) differentiators.push('Quick TTFB');
+  if (alloResult.metrics.tbt < 100) differentiators.push('Minimal TBT');
+  
+  return differentiators.length > 0 ? differentiators.join(', ') : 'No significant advantages';
+} 
