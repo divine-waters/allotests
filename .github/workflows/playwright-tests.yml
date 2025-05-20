@@ -1,0 +1,49 @@
+name: Playwright Tests & PR on Failure
+
+on:
+  push:
+    branches: [ main ] # Or your primary branch name
+  pull_request:
+    branches: [ main ] # Or your primary branch name
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x' # Specify your Node.js version
+
+    - name: Install dependencies
+      run: npm ci # 'npm ci' is generally recommended for CI for faster, more reliable builds
+
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+
+    - name: Run Playwright tests
+      id: run_tests
+      run: npx playwright test
+      continue-on-error: true # Important: Allows workflow to continue to create PR
+
+    - name: Create Pull Request on Failure
+      if: steps.run_tests.outcome == 'failure'
+      uses: peter-evans/create-pull-request@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "fix: Automated PR for failing Playwright tests"
+        branch: "fix/failing-tests-${{ github.run_id }}" # Creates a unique branch for the fix
+        base: ${{ github.ref_name }} # Creates PR against the branch the push was made to
+        title: "🚨 Automated PR: Fix failing Playwright tests"
+        body: |
+          Playwright tests failed on commit `${{ github.sha }}` in the `${{ github.ref_name }}` branch.
+          This Pull Request has been automatically created to address the failures.
+
+          View Test Run Details
+        labels: bug, automated-pr, playwright-failure
+        assignees: ${{ github.actor }} # Assigns the PR to the person who pushed
