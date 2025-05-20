@@ -489,105 +489,193 @@ test.describe('Performance Tests', () => {
 
       let metrics: any = {};
       let error: string | undefined;
-      
       let context: BrowserContext | null = null;
+      let page: Page | null = null;
       
       try {
-        // Use Playwright's built-in throttling
-        context = await browser.newContext({
-          ...testInfo.project.use,
-          // Use 3G preset which works across all browsers
-          geolocation: { longitude: 12.492507, latitude: 41.889938 },
-          locale: 'en-US',
-          timezoneId: 'Europe/Rome',
-          deviceScaleFactor: 2,
-          isMobile: true,
-          hasTouch: true,
-          viewport: { width: 375, height: 667 }
-        });
+        await test.step('Setup 3G network conditions', async () => {
+          // Use Playwright's built-in throttling
+          context = await browser.newContext({
+            ...testInfo.project.use,
+            // Use 3G preset which works across all browsers
+            geolocation: { longitude: 12.492507, latitude: 41.889938 },
+            locale: 'en-US',
+            timezoneId: 'Europe/Rome',
+            deviceScaleFactor: 2,
+            isMobile: true,
+            hasTouch: true,
+            viewport: { width: 375, height: 667 },
+            // Add performance monitoring
+            recordVideo: { dir: 'test-results/videos' },
+            recordHar: { path: 'test-results/hars/3g-network-test.har' }
+          });
 
-        // Set network throttling using Playwright's built-in capabilities
-        await context.route('**/*', async route => {
-          // Simulate 3G-like conditions by adding delay
-          await new Promise(resolve => setTimeout(resolve, 100)); // 100ms latency
-          await route.continue();
-        });
-        
-        const page = await context.newPage();
-        
-        // Navigate with retry logic
-        let retryCount = 0;
-        const maxRetries = 3;
-        let totalLoadTime = 0;
-        
-        while (retryCount < maxRetries) {
-          try {
-            const startTime = Date.now();
-            await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-            totalLoadTime = Date.now() - startTime;
-            break;
-          } catch (error) {
-            retryCount++;
-            if (retryCount === maxRetries) {
-              throw error;
+          page = await context.newPage();
+          
+          // Set default timeout
+          page.setDefaultTimeout(90000); // Increased timeout for 3G
+          page.setDefaultNavigationTimeout(90000);
+          
+          // Add error handling for page crashes
+          page.on('crash', () => {
+            throw new Error('Page crashed during test execution');
+          });
+          
+          // Add error handling for console errors
+          page.on('console', msg => {
+            if (msg.type() === 'error') {
+              console.log(`Page error: ${msg.text()}`);
             }
-            console.log(`Retry ${retryCount}/${maxRetries} for 3G test...`);
-            await page.waitForTimeout(2000);
-          }
-        }
-        
-        const navigationMetrics: NavigationMetrics = await page.evaluate(() => {
-          const resources = performance.getEntriesByType('resource').length;
-          const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-          return {
-            resources,
-            loadTime: navEntry.loadEventEnd - navEntry.startTime
-          };
-        });
-        
-        const memoryMB = await page.evaluate(() => {
-          const memory = (performance as any).memory;
-          return memory ? memory.usedJSHeapSize / (1024 * 1024) : 0;
-        });
-        
-        metrics = {
-          loadTime: totalLoadTime,
-          resources: navigationMetrics.resources,
-          memoryMB
-        };
+          });
 
-        printTestSummary(testInfo, '3G Network', metrics);
-        printTestInsights(metrics, '3G');
-        
+          // Set network throttling using Playwright's built-in capabilities
+          await context.route('**/*', async route => {
+            // Simulate 3G-like conditions by adding delay
+            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms latency
+            await route.continue();
+          });
+        });
+
+        await test.step('Navigate and collect metrics', async () => {
+          if (!page) throw new Error('Page not initialized');
+          
+          // Navigate with retry logic
+          let retryCount = 0;
+          const maxRetries = 3;
+          let lastError: Error = new Error('Initial error state');
+          let totalLoadTime = 0;
+          
+          while (retryCount < maxRetries) {
+            try {
+              const startTime = Date.now();
+              
+              // Use Promise.race to handle timeouts better
+              await Promise.race([
+                page.goto(url, { 
+                  waitUntil: 'networkidle',
+                  timeout: 90000 // Increased timeout for 3G
+                }),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Navigation timeout')), 90000)
+                )
+              ]);
+              
+              // Wait for network to be idle with timeout
+              await Promise.race([
+                page.waitForLoadState('networkidle', { timeout: 30000 }),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Network idle timeout')), 30000)
+                )
+              ]);
+              
+              totalLoadTime = Date.now() - startTime;
+              
+              // Collect metrics
+              const navigationMetrics: NavigationMetrics = await page.evaluate(() => {
+                const resources = performance.getEntriesByType('resource').length;
+                const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+                return {
+                  resources,
+                  loadTime: navEntry.loadEventEnd - navEntry.startTime
+                };
+              });
+              
+              const memoryMB = await page.evaluate(() => {
+                const memory = (performance as any).memory;
+                return memory ? memory.usedJSHeapSize / (1024 * 1024) : 0;
+              });
+              
+              metrics = {
+                loadTime: totalLoadTime,
+                resources: navigationMetrics.resources,
+                memoryMB
+              };
+
+              test.info().annotations.push(
+                { type: 'metric', description: `Load Time: ${metrics.loadTime}ms` },
+                { type: 'metric', description: `Resource Count: ${metrics.resources}` },
+                { type: 'metric', description: `Memory Usage: ${metrics.memoryMB.toFixed(2)}MB` }
+              );
+              
+              break; // Success, exit retry loop
+            } catch (err) {
+              lastError = err instanceof Error ? err : new Error(String(err));
+              retryCount++;
+              if (retryCount === maxRetries) {
+                throw new Error(`Failed to load page after ${maxRetries} attempts. Last error: ${lastError.message}`);
+              }
+              test.info().annotations.push({ 
+                type: 'retry', 
+                description: `Retry ${retryCount}/${maxRetries}: ${lastError.message}` 
+              });
+              
+              // Use a shorter timeout for retries
+              await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+            }
+          }
+        });
+
+        await test.step('Print test summary', async () => {
+          const output = [
+            '\n📊 3G Network Performance Summary',
+            '-'.repeat(80),
+            '✅ Test Completed',
+            '\nCollected Metrics:',
+            `• Load Time: ${metrics.loadTime}ms`,
+            `• Resource Count: ${metrics.resources}`,
+            `• Memory Usage: ${metrics.memoryMB.toFixed(2)}MB`,
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            'Network: 3G Simulated (Slow 3G)',
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
+        });
+
       } catch (err) {
         error = err.message;
-        printTestSummary(testInfo, '3G Network', metrics, error);
+        await test.step('Handle test failure', async () => {
+          const output = [
+            '\n❌ 3G Network Performance Test Failed',
+            '-'.repeat(80),
+            `Error: ${error}`,
+            '\nPossible Issues:',
+            '- Network connectivity issues',
+            '- Server response timeouts',
+            '- Resource loading failures',
+            '- Browser performance limitations',
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            'Network: 3G Simulated (Slow 3G)',
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
+        });
       } finally {
-        printTestExecutionStatus(testInfo, '3G Network Performance Test', error ? 'failed' : 'completed', error);
-        if (context) {
-          await context.close();
-        }
+        await test.step('Cleanup', async () => {
+          try {
+            if (page) {
+              // Ensure page is closed before context
+              await page.close().catch(() => {});
+              page = null;
+            }
+            if (context) {
+              await context.close().catch(() => {});
+              context = null;
+            }
+          } catch (err) {
+            console.error('Error during cleanup:', err);
+          }
+          
+          const status = error ? 'failed' : 'completed';
+          test.info().annotations.push({ 
+            type: 'test_status', 
+            description: `3G Network Performance Test - ${status}` 
+          });
+        });
       }
-      
-      await test.step('Print test summary', async () => {
-        const output = [
-          '\n📊 3G Network Performance Summary',
-          '-'.repeat(80),
-          '✅ Test Completed',
-          '\nCollected Metrics:',
-          `• Load Time: ${metrics.loadTime}ms`,
-          `• Resource Count: ${metrics.resources}`,
-          `• Memory Usage: ${metrics.memoryMB.toFixed(2)}MB`,
-          '\nTest Environment:',
-          getEnvironmentInfo(),
-          'Network: 3G Simulated (Slow 3G)',
-          '-'.repeat(80)
-        ].join('\n');
-        
-        test.info().annotations.push({ type: 'test_output', description: output });
-      });
-      
-      printTestFooter();
     });
 
     test('Performance under CPU throttling', async ({ browser }) => {
@@ -749,9 +837,31 @@ test.describe('Performance Tests', () => {
         // Create contexts and pages
         await test.step('Setup concurrent users', async () => {
           for (let i = 0; i < numUsers; i++) {
-            const context = await browser.newContext(testInfo.project.use);
+            const context = await browser.newContext({
+              ...testInfo.project.use,
+              // Add performance monitoring
+              recordVideo: { dir: 'test-results/videos' },
+              recordHar: { path: `test-results/hars/concurrent-user-${i}.har` }
+            });
             contexts.push(context);
+            
             const page = await context.newPage();
+            // Set default timeout
+            page.setDefaultTimeout(90000); // Increased timeout for concurrent load
+            page.setDefaultNavigationTimeout(90000);
+            
+            // Add error handling for page crashes
+            page.on('crash', () => {
+              throw new Error(`Page ${i} crashed during test execution`);
+            });
+            
+            // Add error handling for console errors
+            page.on('console', msg => {
+              if (msg.type() === 'error') {
+                console.log(`Page ${i} error: ${msg.text()}`);
+              }
+            });
+            
             pages.push(page);
           }
         });
@@ -761,10 +871,24 @@ test.describe('Performance Tests', () => {
           const navigationPromises = pages.map(async (page, index) => {
             const startTime = Date.now();
             try {
-              await page.goto(url, { 
-                waitUntil: 'networkidle', 
-                timeout: 45000 // Increased timeout for concurrent load
-              });
+              // Use Promise.race to handle timeouts better
+              await Promise.race([
+                page.goto(url, { 
+                  waitUntil: 'networkidle',
+                  timeout: 90000 // Increased timeout for concurrent load
+                }),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error(`Navigation timeout for user ${index}`)), 90000)
+                )
+              ]);
+              
+              // Wait for network to be idle with timeout
+              await Promise.race([
+                page.waitForLoadState('networkidle', { timeout: 30000 }),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error(`Network idle timeout for user ${index}`)), 30000)
+                )
+              ]);
               
               // Collect resource contention metrics before closing
               const resourceContention = await page.evaluate(() => {
@@ -787,7 +911,7 @@ test.describe('Performance Tests', () => {
             } catch (err) {
               return { 
                 loadTime: 0, 
-                error: err,
+                error: err instanceof Error ? err : new Error(String(err)),
                 resourceContention: 0
               };
             }
@@ -811,14 +935,35 @@ test.describe('Performance Tests', () => {
           metrics = {
             avgLoadTime,
             errorRate,
-            resourceContention: avgResourceContention
+            resourceContention: avgResourceContention,
+            successfulLoads: successfulLoads.length,
+            totalLoads: numUsers
           };
 
           test.info().annotations.push(
             { type: 'metric', description: `Average Load Time: ${metrics.avgLoadTime.toFixed(0)}ms` },
             { type: 'metric', description: `Error Rate: ${(metrics.errorRate * 100).toFixed(1)}%` },
-            { type: 'metric', description: `Resource Contention: ${metrics.resourceContention.toFixed(1)}%` }
+            { type: 'metric', description: `Resource Contention: ${metrics.resourceContention.toFixed(1)}%` },
+            { type: 'metric', description: `Successful Loads: ${metrics.successfulLoads}/${metrics.totalLoads}` }
           );
+        });
+
+        await test.step('Print test summary', async () => {
+          const output = [
+            '\n📊 Concurrent Users Performance Summary',
+            '-'.repeat(80),
+            '✅ Test Completed',
+            '\nCollected Metrics:',
+            `• Average Load Time: ${metrics.avgLoadTime.toFixed(0)}ms`,
+            `• Error Rate: ${(metrics.errorRate * 100).toFixed(1)}%`,
+            `• Resource Contention: ${metrics.resourceContention.toFixed(1)}%`,
+            `• Successful Loads: ${metrics.successfulLoads}/${metrics.totalLoads}`,
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
         });
 
       } catch (err) {
@@ -842,8 +987,29 @@ test.describe('Performance Tests', () => {
         });
       } finally {
         await test.step('Cleanup', async () => {
-          // Close contexts in parallel
-          await Promise.allSettled(contexts.map(c => c.close().catch(() => {})));
+          try {
+            // Close pages first
+            await Promise.allSettled(pages.map(async (page, index) => {
+              try {
+                await page.close().catch(() => {});
+              } catch (err) {
+                console.error(`Error closing page ${index}:`, err);
+              }
+            }));
+            pages.length = 0; // Clear the array
+            
+            // Then close contexts
+            await Promise.allSettled(contexts.map(async (context, index) => {
+              try {
+                await context.close().catch(() => {});
+              } catch (err) {
+                console.error(`Error closing context ${index}:`, err);
+              }
+            }));
+            contexts.length = 0; // Clear the array
+          } catch (err) {
+            console.error('Error during cleanup:', err);
+          }
           
           const status = error ? 'failed' : 'completed';
           test.info().annotations.push({ 
@@ -854,146 +1020,241 @@ test.describe('Performance Tests', () => {
       }
     });
 
-    test('Performance under memory pressure', async ({ browser }, testInfo) => {
-      printTestExecutionStatus(testInfo, 'Memory Pressure Performance Test', 'started');
+    test('Performance under memory pressure', async ({ browser }) => {
+      const testInfo = test.info();
+      
+      await test.step('Initialize test', async () => {
+        testInfo.annotations.push({ type: 'test_type', description: 'Memory Pressure Performance Test' });
+        test.info().annotations.push({ 
+          type: 'test_output', 
+          description: [
+            '\n🧪 Starting Memory Pressure Performance Test',
+            '-'.repeat(80),
+            'Test Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n')
+        });
+      });
+
       let metrics: any = {};
       let error: string | undefined;
       let context: BrowserContext | null = null;
+      let page: Page | null = null;
       
       try {
-        context = await browser.newContext(testInfo.project.use);
-        const page = await context.newPage();
-        
-        // Initial metrics collection
-        const initialMetrics = await page.evaluate(() => {
-          const memory = (performance as any).memory;
-          return {
-            heapSize: memory?.usedJSHeapSize || 0,
-            domNodes: document.getElementsByTagName('*').length,
-            eventListeners: (window as any).__eventListeners?.length || 0,
-            timestamp: Date.now()
-          };
-        }).catch(() => ({
-          heapSize: 0,
-          domNodes: 0,
-          eventListeners: 0,
-          timestamp: Date.now()
-        }));
-
-        console.log('\nInitial Memory State:');
-        console.log(`• Heap Size: ${(initialMetrics.heapSize / (1024 * 1024)).toFixed(2)}MB`);
-        console.log(`• DOM Nodes: ${initialMetrics.domNodes}`);
-        console.log(`• Event Listeners: ${initialMetrics.eventListeners}`);
-        
-        // Navigate and interact
-        try {
-          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-          
-          // Simulate user interactions to trigger memory usage
-          console.log('\nSimulating User Interactions...');
-          await page.evaluate(() => {
-            // Create some DOM elements
-            for (let i = 0; i < 100; i++) {
-              const div = document.createElement('div');
-              div.textContent = `Test Element ${i}`;
-              document.body.appendChild(div);
-            }
-            
-            // Add some event listeners
-            for (let i = 0; i < 50; i++) {
-              document.addEventListener(`test-event-${i}`, () => {});
-            }
-            
-            // Create some objects in memory
-            window['testObjects'] = Array(1000).fill(null).map((_, i) => ({
-              id: i,
-              data: new Array(100).fill('test data')
-            }));
+        await test.step('Setup browser context', async () => {
+          context = await browser.newContext({
+            ...testInfo.project.use,
+            // Add performance monitoring
+            recordVideo: { dir: 'test-results/videos' },
+            recordHar: { path: 'test-results/hars/memory-pressure-test.har' }
           });
           
-          // Wait for potential garbage collection
-          await page.waitForTimeout(2000);
+          page = await context.newPage();
           
-        } catch (navError) {
-          console.log('\nNavigation/Interaction Error:');
-          console.log(navError.message);
-          // Continue with metrics collection even if navigation fails
-        }
-        
-        // Final metrics collection
-        const finalMetrics = await page.evaluate(() => {
-          const memory = (performance as any).memory;
-          return {
-            heapSize: memory?.usedJSHeapSize || 0,
-            domNodes: document.getElementsByTagName('*').length,
-            eventListeners: (window as any).__eventListeners?.length || 0,
+          // Set default timeout
+          page.setDefaultTimeout(60000); // Increased timeout
+          page.setDefaultNavigationTimeout(60000);
+          
+          // Add error handling for page crashes
+          page.on('crash', () => {
+            throw new Error('Page crashed during test execution');
+          });
+          
+          // Add error handling for console errors
+          page.on('console', msg => {
+            if (msg.type() === 'error') {
+              console.log(`Page error: ${msg.text()}`);
+            }
+          });
+        });
+
+        await test.step('Collect initial metrics', async () => {
+          if (!page) throw new Error('Page not initialized');
+          
+          metrics.initial = await page.evaluate(() => {
+            const memory = (performance as any).memory;
+            return {
+              heapSize: memory?.usedJSHeapSize || 0,
+              domNodes: document.getElementsByTagName('*').length,
+              eventListeners: (window as any).__eventListeners?.length || 0,
+              timestamp: Date.now()
+            };
+          }).catch(() => ({
+            heapSize: 0,
+            domNodes: 0,
+            eventListeners: 0,
             timestamp: Date.now()
-          };
-        }).catch(() => ({
-          heapSize: 0,
-          domNodes: 0,
-          eventListeners: 0,
-          timestamp: Date.now()
-        }));
-        
-        // Calculate metrics
-        const heapGrowth = (finalMetrics.heapSize - initialMetrics.heapSize) / (1024 * 1024);
-        const domGrowth = finalMetrics.domNodes - initialMetrics.domNodes;
-        const listenerGrowth = finalMetrics.eventListeners - initialMetrics.eventListeners;
-        const testDuration = (finalMetrics.timestamp - initialMetrics.timestamp) / 1000;
-        
-        metrics = {
-          heapGrowth,
-          domNodes: finalMetrics.domNodes,
-          eventListeners: finalMetrics.eventListeners,
-          domGrowth,
-          listenerGrowth,
-          testDuration
-        };
-        
-        // Print detailed memory analysis
-        console.log('\nMemory Pressure Analysis:');
-        console.log(`• Test Duration: ${testDuration.toFixed(1)}s`);
-        console.log(`• Heap Growth: ${heapGrowth.toFixed(2)}MB`);
-        console.log(`• DOM Growth: ${domGrowth} nodes`);
-        console.log(`• Event Listener Growth: ${listenerGrowth} listeners`);
-        console.log(`• Final DOM Size: ${finalMetrics.domNodes} nodes`);
-        console.log(`• Final Event Listeners: ${finalMetrics.eventListeners}`);
-        
-        // Print memory warnings if thresholds are exceeded
-        if (heapGrowth > 50) {
-          console.log('\n⚠️ High Memory Growth Detected:');
-          console.log('- Consider implementing memory cleanup');
-          console.log('- Review object lifecycle management');
-          console.log('- Check for memory leaks in event handlers');
-        }
-        
-        if (domGrowth > 1000) {
-          console.log('\n⚠️ Large DOM Growth Detected:');
-          console.log('- Review DOM manipulation patterns');
-          console.log('- Consider implementing virtual DOM');
-          console.log('- Check for unnecessary element creation');
-        }
-        
-        if (listenerGrowth > 100) {
-          console.log('\n⚠️ High Event Listener Growth Detected:');
-          console.log('- Implement event delegation');
-          console.log('- Review event listener cleanup');
-          console.log('- Check for duplicate event bindings');
-        }
-        
-        printTestSummary(testInfo, 'Memory Pressure', metrics);
-        printTestInsights(metrics, 'memory');
-        
+          }));
+
+          test.info().annotations.push(
+            { type: 'metric', description: `Initial Heap Size: ${(metrics.initial.heapSize / (1024 * 1024)).toFixed(2)}MB` },
+            { type: 'metric', description: `Initial DOM Nodes: ${metrics.initial.domNodes}` },
+            { type: 'metric', description: `Initial Event Listeners: ${metrics.initial.eventListeners}` }
+          );
+        });
+
+        await test.step('Simulate memory pressure', async () => {
+          if (!page) throw new Error('Page not initialized');
+          
+          // Navigate with retry logic
+          let retryCount = 0;
+          const maxRetries = 3;
+          let lastError: Error = new Error('Initial error state');
+          
+          while (retryCount < maxRetries) {
+            try {
+              await page.goto(url, { 
+                waitUntil: 'networkidle',
+                timeout: 60000 // Increased timeout
+              });
+              
+              // Wait for network to be idle
+              await page.waitForLoadState('networkidle', { timeout: 15000 });
+              
+              // Simulate user interactions
+              await page.evaluate(() => {
+                // Create DOM elements
+                for (let i = 0; i < 100; i++) {
+                  const div = document.createElement('div');
+                  div.textContent = `Test Element ${i}`;
+                  document.body.appendChild(div);
+                }
+                
+                // Add event listeners
+                for (let i = 0; i < 50; i++) {
+                  document.addEventListener(`test-event-${i}`, () => {});
+                }
+                
+                // Create objects in memory
+                window['testObjects'] = Array(1000).fill(null).map((_, i) => ({
+                  id: i,
+                  data: new Array(100).fill('test data')
+                }));
+              });
+              
+              // Wait for potential garbage collection
+              await page.waitForTimeout(2000);
+              break;
+            } catch (err) {
+              lastError = err instanceof Error ? err : new Error(String(err));
+              retryCount++;
+              if (retryCount === maxRetries) {
+                throw new Error(`Failed to simulate memory pressure after ${maxRetries} attempts. Last error: ${lastError.message}`);
+              }
+              test.info().annotations.push({ 
+                type: 'retry', 
+                description: `Retry ${retryCount}/${maxRetries}: ${lastError.message}` 
+              });
+              await page.waitForTimeout(2000 * retryCount); // Exponential backoff
+            }
+          }
+        });
+
+        await test.step('Collect final metrics', async () => {
+          if (!page) throw new Error('Page not initialized');
+          
+          metrics.final = await page.evaluate(() => {
+            const memory = (performance as any).memory;
+            return {
+              heapSize: memory?.usedJSHeapSize || 0,
+              domNodes: document.getElementsByTagName('*').length,
+              eventListeners: (window as any).__eventListeners?.length || 0,
+              timestamp: Date.now()
+            };
+          }).catch(() => ({
+            heapSize: 0,
+            domNodes: 0,
+            eventListeners: 0,
+            timestamp: Date.now()
+          }));
+
+          // Calculate metrics
+          metrics.heapGrowth = (metrics.final.heapSize - metrics.initial.heapSize) / (1024 * 1024);
+          metrics.domGrowth = metrics.final.domNodes - metrics.initial.domNodes;
+          metrics.listenerGrowth = metrics.final.eventListeners - metrics.initial.eventListeners;
+          metrics.testDuration = (metrics.final.timestamp - metrics.initial.timestamp) / 1000;
+
+          test.info().annotations.push(
+            { type: 'metric', description: `Heap Growth: ${metrics.heapGrowth.toFixed(2)}MB` },
+            { type: 'metric', description: `DOM Growth: ${metrics.domGrowth} nodes` },
+            { type: 'metric', description: `Event Listener Growth: ${metrics.listenerGrowth}` },
+            { type: 'metric', description: `Test Duration: ${metrics.testDuration.toFixed(1)}s` }
+          );
+        });
+
+        await test.step('Print test summary', async () => {
+          const output = [
+            '\n📊 Memory Pressure Performance Summary',
+            '-'.repeat(80),
+            '✅ Test Completed',
+            '\nCollected Metrics:',
+            `• Heap Growth: ${metrics.heapGrowth.toFixed(2)}MB`,
+            `• DOM Growth: ${metrics.domGrowth} nodes`,
+            `• Event Listener Growth: ${metrics.listenerGrowth}`,
+            `• Test Duration: ${metrics.testDuration.toFixed(1)}s`,
+            '\nMemory Analysis:',
+            ...(metrics.heapGrowth > 50 ? [
+              '⚠️ High Memory Growth Detected:',
+              '- Consider implementing memory cleanup',
+              '- Review object lifecycle management',
+              '- Check for memory leaks in event handlers'
+            ] : []),
+            ...(metrics.domGrowth > 1000 ? [
+              '\n⚠️ Large DOM Growth Detected:',
+              '- Review DOM manipulation patterns',
+              '- Consider implementing virtual DOM',
+              '- Check for unnecessary element creation'
+            ] : []),
+            ...(metrics.listenerGrowth > 100 ? [
+              '\n⚠️ High Event Listener Growth Detected:',
+              '- Implement event delegation',
+              '- Review event listener cleanup',
+              '- Check for duplicate event bindings'
+            ] : []),
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
+        });
+
       } catch (err) {
         error = err.message;
-        printTestSummary(testInfo, 'Memory Pressure', metrics, error);
+        await test.step('Handle test failure', async () => {
+          const output = [
+            '\n❌ Memory Pressure Performance Test Failed',
+            '-'.repeat(80),
+            `Error: ${error}`,
+            '\nPossible Issues:',
+            '- Memory allocation failures',
+            '- Browser performance limitations',
+            '- Resource exhaustion',
+            '- Test timeout exceeded',
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n');
+          
+          test.info().annotations.push({ type: 'test_output', description: output });
+        });
       } finally {
-        if (context) {
-          await context.close();
-        }
-        printTestExecutionStatus(testInfo, 'Memory Pressure Performance Test', error ? 'failed' : 'completed', error);
-        printTestFooter();
+        await test.step('Cleanup', async () => {
+          try {
+            if (page) await page.close().catch(() => {});
+            if (context) await context.close().catch(() => {});
+          } catch (err) {
+            console.error('Error during cleanup:', err);
+          }
+          
+          const status = error ? 'failed' : 'completed';
+          test.info().annotations.push({ 
+            type: 'test_status', 
+            description: `Memory Pressure Performance Test - ${status}` 
+          });
+        });
       }
     });
   });

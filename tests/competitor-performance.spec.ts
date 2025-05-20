@@ -258,7 +258,7 @@ test.describe('Competitor Performance Analysis', () => {
           // Navigate with retry logic
           let retryCount = 0;
           const maxRetries = 3;
-          let lastError: Error | undefined;
+          let lastError: Error = new Error('Initial error state');
           
           while (retryCount < maxRetries) {
             try {
@@ -295,7 +295,7 @@ test.describe('Competitor Performance Analysis', () => {
               
               break; // Success, exit retry loop
             } catch (err) {
-              lastError = err;
+              lastError = err instanceof Error ? err : new Error(String(err));
               retryCount++;
               if (retryCount === maxRetries) {
                 throw new Error(`Failed to load page after ${maxRetries} attempts. Last error: ${lastError.message}`);
