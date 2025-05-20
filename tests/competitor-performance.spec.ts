@@ -33,6 +33,27 @@ interface TestResult {
   rating: string;
 }
 
+// Add environment configuration
+const TEST_ENV = {
+  browser: process.env.BROWSER || 'chromium',
+  viewport: process.env.VIEWPORT || '1920x1080',
+  network: process.env.NETWORK || 'no-throttling',
+  device: process.env.DEVICE || 'desktop',
+  locale: process.env.LOCALE || 'en-US',
+  timezone: process.env.TIMEZONE || 'America/Denver'
+};
+
+function getEnvironmentInfo() {
+  return [
+    `• Browser: ${TEST_ENV.browser}`,
+    `• Viewport: ${TEST_ENV.viewport}`,
+    `• Network: ${TEST_ENV.network}`,
+    `• Device: ${TEST_ENV.device}`,
+    `• Locale: ${TEST_ENV.locale}`,
+    `• Timezone: ${TEST_ENV.timezone}`
+  ].join('\n');
+}
+
 function printCompetitorInsights(metrics: PerformanceMetrics, competitor: CompetitorSite) {
   console.log('\n💡 Performance Insights:');
   console.log('-'.repeat(40));
@@ -163,9 +184,7 @@ function printCompetitorSummary(testInfo: TestInfo, competitor: string, metrics:
       `• JS Heap Size: ${metrics?.jsHeapSize ? (metrics.jsHeapSize / (1024 * 1024)).toFixed(2) + 'MB' : 'Not collected'}`
     ]),
     '\nTest Environment:',
-    `• Browser: ${process.env.BROWSER || 'Chromium'}`,
-    `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
-    `• Network: Default`,
+    getEnvironmentInfo(),
     '-'.repeat(80)
   ].join('\n');
   
@@ -181,10 +200,23 @@ test.describe('Competitor Performance Analysis', () => {
   const results: Array<{ competitor: string; metrics: any; error?: string }> = [];
 
   for (const competitor of COMPETITORS) {
-    test(`Analyze ${competitor.name} performance`, async ({ browser }, testInfo) => {
+    test(`Analyze ${competitor.name} performance`, async ({ browser }) => {
+      const testInfo = test.info();
+      
       await test.step('Initialize test', async () => {
         testInfo.annotations.push({ type: 'test_type', description: `Competitor Analysis - ${competitor.name}` });
-        console.log(`\n🧪 Starting Competitor Analysis for ${competitor.name}`);
+        test.info().annotations.push({ 
+          type: 'test_output', 
+          description: [
+            '\n🧪 Starting Competitor Analysis',
+            '-'.repeat(80),
+            `Competitor: ${competitor.name}`,
+            `URL: ${competitor.url}`,
+            '\nTest Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n')
+        });
       });
 
       let metrics: any = {};
@@ -209,7 +241,10 @@ test.describe('Competitor Performance Analysis', () => {
               if (retryCount === maxRetries) {
                 throw err;
               }
-              testInfo.annotations.push({ type: 'retry', description: `Retry ${retryCount}/${maxRetries}` });
+              test.info().annotations.push({ 
+                type: 'retry', 
+                description: `Retry ${retryCount}/${maxRetries}` 
+              });
               await page.waitForTimeout(2000);
             }
           }
@@ -229,8 +264,7 @@ test.describe('Competitor Performance Analysis', () => {
               };
             });
 
-            // Add metrics as annotations
-            testInfo.annotations.push(
+            test.info().annotations.push(
               { type: 'metric', description: `LCP: ${metrics.lcp}ms` },
               { type: 'metric', description: `CLS: ${metrics.cls.toFixed(3)}` },
               { type: 'metric', description: `TTFB: ${metrics.ttfb}ms` },
@@ -256,18 +290,11 @@ test.describe('Competitor Performance Analysis', () => {
               `• DOM Size: ${metrics.domSize}`,
               `• JS Heap Size: ${(metrics.jsHeapSize / (1024 * 1024)).toFixed(2)}MB`,
               '\nTest Environment:',
-              `• Browser: ${process.env.BROWSER || 'Chromium'}`,
-              `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
-              `• Network: Default`,
+              getEnvironmentInfo(),
               '-'.repeat(80)
             ].join('\n');
             
-            console.log(output);
-            testInfo.attachments.push({
-              name: `${competitor.name.toLowerCase().replace(/\s+/g, '-')}-summary`,
-              contentType: 'text/plain',
-              body: Buffer.from(output)
-            });
+            test.info().annotations.push({ type: 'test_output', description: output });
           });
 
           results.push({ competitor: competitor.name, metrics });
@@ -286,18 +313,11 @@ test.describe('Competitor Performance Analysis', () => {
             '- Resource loading failures',
             '- Browser compatibility issues',
             '\nTest Environment:',
-            `• Browser: ${process.env.BROWSER || 'Chromium'}`,
-            `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
-            `• Network: Default`,
+            getEnvironmentInfo(),
             '-'.repeat(80)
           ].join('\n');
           
-          console.log(output);
-          testInfo.attachments.push({
-            name: `${competitor.name.toLowerCase().replace(/\s+/g, '-')}-error`,
-            contentType: 'text/plain',
-            body: Buffer.from(output)
-          });
+          test.info().annotations.push({ type: 'test_output', description: output });
           results.push({ competitor: competitor.name, metrics, error });
         });
       } finally {
@@ -306,14 +326,22 @@ test.describe('Competitor Performance Analysis', () => {
             await context.close();
           }
           const status = error ? 'failed' : 'completed';
-          testInfo.annotations.push({ type: 'test_status', description: `${competitor.name} - ${status}` });
-          console.log(`\n🧪 ${competitor.name} Analysis ${status.toUpperCase()}`);
+          test.info().annotations.push({ 
+            type: 'test_status', 
+            description: `${competitor.name} - ${status}` 
+          });
+          test.info().annotations.push({ 
+            type: 'test_output', 
+            description: `\n🧪 ${competitor.name} Analysis ${status.toUpperCase()}` 
+          });
         });
       }
     });
   }
 
-  test.afterAll(async ({}, testInfo) => {
+  test.afterAll(async () => {
+    const testInfo = test.info();
+    
     await test.step('Generate final report', async () => {
       if (results.length === 0) {
         const output = [
@@ -323,15 +351,13 @@ test.describe('Competitor Performance Analysis', () => {
           '- Server response timeouts',
           '- Browser compatibility issues',
           '- Resource loading failures',
-          '- Test execution errors'
+          '- Test execution errors',
+          '\nTest Environment:',
+          getEnvironmentInfo(),
+          '-'.repeat(80)
         ].join('\n');
         
-        console.log(output);
-        testInfo.attachments.push({
-          name: 'no-results-warning',
-          contentType: 'text/plain',
-          body: Buffer.from(output)
-        });
+        test.info().annotations.push({ type: 'test_output', description: output });
         return;
       }
 
@@ -358,15 +384,12 @@ test.describe('Competitor Performance Analysis', () => {
         `• Industry Position: ${getIndustryPosition(sortedResults)}`,
         `• ALLO Rank: ${getALLORank(sortedResults)}`,
         `• Key Differentiators: ${getKeyDifferentiators(sortedResults)}`,
+        '\nTest Environment:',
+        getEnvironmentInfo(),
         '-'.repeat(80)
       ].join('\n');
       
-      console.log(output);
-      testInfo.attachments.push({
-        name: 'competitor-rankings',
-        contentType: 'text/plain',
-        body: Buffer.from(output)
-      });
+      test.info().annotations.push({ type: 'test_output', description: output });
     });
   });
 });

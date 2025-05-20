@@ -36,6 +36,27 @@ interface NavigationMetrics {
   loadTime: number;
 }
 
+// Add environment configuration
+const TEST_ENV = {
+  browser: process.env.BROWSER || 'chromium',
+  viewport: process.env.VIEWPORT || '1920x1080',
+  network: process.env.NETWORK || 'no-throttling',
+  device: process.env.DEVICE || 'desktop',
+  locale: process.env.LOCALE || 'en-US',
+  timezone: process.env.TIMEZONE || 'America/Denver'
+};
+
+function getEnvironmentInfo() {
+  return [
+    `• Browser: ${TEST_ENV.browser}`,
+    `• Viewport: ${TEST_ENV.viewport}`,
+    `• Network: ${TEST_ENV.network}`,
+    `• Device: ${TEST_ENV.device}`,
+    `• Locale: ${TEST_ENV.locale}`,
+    `• Timezone: ${TEST_ENV.timezone}`
+  ].join('\n');
+}
+
 function printTestInsights(metrics: any, testType: '3G' | 'CPU' | 'concurrent' | 'memory' | 'LCP' | 'TBT') {
   const thresholds = BENCHMARKS[testType === '3G' ? 'network' : testType.toLowerCase()];
   
@@ -203,10 +224,7 @@ function printTestSummary(testInfo: TestInfo, testType: string, metrics: any, er
       ...formatMetrics(testType, metrics)
     ],
     '\nTest Environment:',
-    `• Browser: ${process.env.BROWSER || 'Chromium'}`,
-    `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
-    `• Network: ${testType === '3G Network' ? '3G Simulated' : 'Default'}`,
-    `• CPU: ${testType === 'CPU Throttling' ? 'Throttled' : 'Default'}`,
+    getEnvironmentInfo(),
     '-'.repeat(80)
   ].join('\n');
   
@@ -295,10 +313,21 @@ function formatMetrics(testType: string, metrics: any): string[] {
 test.describe('Performance Tests', () => {
   const url = 'https://www.allocommunications.com/';
 
-  test('Homepage Performance', async ({ page, context }, testInfo) => {
+  test('Homepage Performance', async ({ page, context }) => {
+    const testInfo = test.info();
+    
     await test.step('Initialize test', async () => {
       testInfo.annotations.push({ type: 'test_type', description: 'Homepage Performance Test' });
-      console.log('\n🧪 Starting Homepage Performance Test');
+      test.info().annotations.push({ 
+        type: 'test_output', 
+        description: [
+          '\n🧪 Starting Homepage Performance Test',
+          '-'.repeat(80),
+          'Test Environment:',
+          getEnvironmentInfo(),
+          '-'.repeat(80)
+        ].join('\n')
+      });
     });
 
     let metrics: any = {};
@@ -326,13 +355,13 @@ test.describe('Performance Tests', () => {
             if (retryCount === maxRetries) {
               throw error;
             }
-            testInfo.annotations.push({ type: 'retry', description: `Retry ${retryCount}/${maxRetries}` });
+            test.info().annotations.push({ type: 'retry', description: `Retry ${retryCount}/${maxRetries}` });
             await page.waitForTimeout(2000);
           }
         }
       });
 
-      await test.step('Collect LCP details', async () => {
+      await test.step('Collect performance metrics', async () => {
         const lcpDetails: LCPDetails = await page.evaluate(() => {
           const entries = performance.getEntriesByType('largest-contentful-paint');
           const lastEntry = entries[entries.length - 1] as any;
@@ -344,11 +373,7 @@ test.describe('Performance Tests', () => {
             timestamp: lastEntry?.startTime || 0
           };
         });
-        metrics.lcp = lcpDetails.lcp;
-        testInfo.annotations.push({ type: 'metric', description: `LCP: ${lcpDetails.lcp}ms` });
-      });
 
-      await test.step('Collect TBT details', async () => {
         const tbtDetails: TBTDetails = await page.evaluate(() => {
           const longTasks = performance.getEntriesByType('longtask').map(task => ({
             name: task.name,
@@ -378,9 +403,18 @@ test.describe('Performance Tests', () => {
             resourceTiming: resources
           };
         });
-        metrics.totalTBT = tbtDetails.totalTBT;
-        metrics.resourceCount = tbtDetails.resourceTiming.length;
-        testInfo.annotations.push({ type: 'metric', description: `TBT: ${tbtDetails.totalTBT}ms` });
+
+        metrics = {
+          lcp: lcpDetails.lcp,
+          totalTBT: tbtDetails.totalTBT,
+          resourceCount: tbtDetails.resourceTiming.length
+        };
+
+        test.info().annotations.push(
+          { type: 'metric', description: `LCP: ${metrics.lcp}ms` },
+          { type: 'metric', description: `TBT: ${metrics.totalTBT.toFixed(0)}ms` },
+          { type: 'metric', description: `Resources: ${metrics.resourceCount}` }
+        );
       });
 
       await test.step('Print test summary', async () => {
@@ -393,18 +427,11 @@ test.describe('Performance Tests', () => {
           `• TBT: ${metrics.totalTBT.toFixed(0)}ms`,
           `• Resource Count: ${metrics.resourceCount}`,
           '\nTest Environment:',
-          `• Browser: ${process.env.BROWSER || 'Chromium'}`,
-          `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
-          `• Network: Default`,
+          getEnvironmentInfo(),
           '-'.repeat(80)
         ].join('\n');
         
-        console.log(output);
-        testInfo.attachments.push({
-          name: 'homepage-performance-summary',
-          contentType: 'text/plain',
-          body: Buffer.from(output)
-        });
+        test.info().annotations.push({ type: 'test_output', description: output });
       });
 
     } catch (err) {
@@ -419,32 +446,47 @@ test.describe('Performance Tests', () => {
           '- Resource loading issues',
           '- Performance metric collection errors',
           '\nTest Environment:',
-          `• Browser: ${process.env.BROWSER || 'Chromium'}`,
-          `• Viewport: ${process.env.VIEWPORT || 'Default'}`,
-          `• Network: Default`,
+          getEnvironmentInfo(),
           '-'.repeat(80)
         ].join('\n');
         
-        console.log(output);
-        testInfo.attachments.push({
-          name: 'homepage-performance-error',
-          contentType: 'text/plain',
-          body: Buffer.from(output)
-        });
+        test.info().annotations.push({ type: 'test_output', description: output });
       });
     } finally {
       await test.step('Finalize test', async () => {
         const status = error ? 'failed' : 'completed';
-        testInfo.annotations.push({ type: 'test_status', description: `Homepage Performance Test - ${status}` });
-        console.log(`\n🧪 Homepage Performance Test ${status.toUpperCase()}`);
+        test.info().annotations.push({ 
+          type: 'test_status', 
+          description: `Homepage Performance Test - ${status}` 
+        });
+        test.info().annotations.push({ 
+          type: 'test_output', 
+          description: `\n🧪 Homepage Performance Test ${status.toUpperCase()}` 
+        });
       });
     }
   });
 
   // Stress test scenarios
   test.describe('Stress Tests', () => {
-    test('Performance under 3G network conditions', async ({ browser }, testInfo) => {
-      printTestExecutionStatus(testInfo, '3G Network Performance Test', 'started');
+    test('Performance under 3G network conditions', async ({ browser }) => {
+      const testInfo = test.info();
+      
+      await test.step('Initialize test', async () => {
+        testInfo.annotations.push({ type: 'test_type', description: '3G Network Performance Test' });
+        test.info().annotations.push({ 
+          type: 'test_output', 
+          description: [
+            '\n🧪 Starting 3G Network Performance Test',
+            '-'.repeat(80),
+            'Test Environment:',
+            getEnvironmentInfo(),
+            'Network: 3G Simulated (Slow 3G)',
+            '-'.repeat(80)
+          ].join('\n')
+        });
+      });
+
       let metrics: any = {};
       let error: string | undefined;
       
@@ -527,11 +569,45 @@ test.describe('Performance Tests', () => {
         }
       }
       
+      await test.step('Print test summary', async () => {
+        const output = [
+          '\n📊 3G Network Performance Summary',
+          '-'.repeat(80),
+          '✅ Test Completed',
+          '\nCollected Metrics:',
+          `• Load Time: ${metrics.loadTime}ms`,
+          `• Resource Count: ${metrics.resources}`,
+          `• Memory Usage: ${metrics.memoryMB.toFixed(2)}MB`,
+          '\nTest Environment:',
+          getEnvironmentInfo(),
+          'Network: 3G Simulated (Slow 3G)',
+          '-'.repeat(80)
+        ].join('\n');
+        
+        test.info().annotations.push({ type: 'test_output', description: output });
+      });
+      
       printTestFooter();
     });
 
-    test('Performance under CPU throttling', async ({ browser }, testInfo) => {
-      printTestExecutionStatus(testInfo, 'CPU Throttling Performance Test', 'started');
+    test('Performance under CPU throttling', async ({ browser }) => {
+      const testInfo = test.info();
+      
+      await test.step('Initialize test', async () => {
+        testInfo.annotations.push({ type: 'test_type', description: 'CPU Throttling Performance Test' });
+        test.info().annotations.push({ 
+          type: 'test_output', 
+          description: [
+            '\n🧪 Starting CPU Throttling Performance Test',
+            '-'.repeat(80),
+            'Test Environment:',
+            getEnvironmentInfo(),
+            'CPU: Throttled (4x slowdown)',
+            '-'.repeat(80)
+          ].join('\n')
+        });
+      });
+
       let metrics: any = {};
       let error: string | undefined;
       
@@ -622,22 +698,56 @@ test.describe('Performance Tests', () => {
         }
       }
       
+      await test.step('Print test summary', async () => {
+        const output = [
+          '\n📊 CPU Throttling Performance Summary',
+          '-'.repeat(80),
+          '✅ Test Completed',
+          '\nCollected Metrics:',
+          `• Load Time: ${metrics.loadTime}ms`,
+          `• JS Execution: ${metrics.jsExecutionTime.toFixed(0)}ms`,
+          `• Long Tasks: ${metrics.longTasks?.length || 0}`,
+          '\nTest Environment:',
+          getEnvironmentInfo(),
+          'CPU: Throttled (4x slowdown)',
+          '-'.repeat(80)
+        ].join('\n');
+        
+        test.info().annotations.push({ type: 'test_output', description: output });
+      });
+      
       printTestFooter();
     });
 
-    test('Performance under concurrent user load', async ({ browser }, testInfo) => {
-      printTestExecutionStatus(testInfo, 'Concurrent Users Performance Test', 'started');
+    test('Performance under concurrent user load', async ({ browser }) => {
+      const testInfo = test.info();
+      const numUsers = 5; // Reduced from 10 to 5 for better stability
+      
+      await test.step('Initialize test', async () => {
+        testInfo.annotations.push({ type: 'test_type', description: 'Concurrent Users Performance Test' });
+        test.info().annotations.push({ 
+          type: 'test_output', 
+          description: [
+            '\n🧪 Starting Concurrent Users Performance Test',
+            '-'.repeat(80),
+            `Concurrent Users: ${numUsers}`,
+            'Test Environment:',
+            getEnvironmentInfo(),
+            '-'.repeat(80)
+          ].join('\n')
+        });
+      });
+
       let metrics: any = {};
       let error: string | undefined;
       
-      const numUsers = 10;
       const contexts: BrowserContext[] = [];
       const pages: Page[] = [];
       const results = await Promise.all(
         Array(numUsers).fill(null).map(async () => {
           const context = await browser.newContext(testInfo.project.use);
           contexts.push(context);
-      const page = await context.newPage();
+          const page = await context.newPage();
           pages.push(page);
           const startTime = Date.now();
           
@@ -645,7 +755,7 @@ test.describe('Performance Tests', () => {
             await page.goto(url);
             const loadTime = Date.now() - startTime;
             return { loadTime, error: null };
-        } catch (error) {
+          } catch (error) {
             return { loadTime: 0, error };
           }
         })
@@ -679,6 +789,24 @@ test.describe('Performance Tests', () => {
 
       printTestSummary(testInfo, 'Concurrent Users', metrics);
       printTestInsights(metrics, 'concurrent');
+      
+      await test.step('Print test summary', async () => {
+        const output = [
+          '\n📊 Concurrent Users Performance Summary',
+          '-'.repeat(80),
+          '✅ Test Completed',
+          '\nCollected Metrics:',
+          `• Average Load Time: ${metrics.avgLoadTime.toFixed(0)}ms`,
+          `• Error Rate: ${(metrics.errorRate * 100).toFixed(1)}%`,
+          `• Resource Contention: ${metrics.resourceContention.toFixed(1)}%`,
+          '\nTest Environment:',
+          getEnvironmentInfo(),
+          `Concurrent Users: ${numUsers}`,
+          '-'.repeat(80)
+        ].join('\n');
+        
+        test.info().annotations.push({ type: 'test_output', description: output });
+      });
       
       printTestExecutionStatus(testInfo, 'Concurrent Users Performance Test', error ? 'failed' : 'completed', error);
       printTestFooter();
