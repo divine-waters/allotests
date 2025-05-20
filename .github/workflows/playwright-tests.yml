@@ -28,7 +28,7 @@ jobs:
 
     - name: Run Playwright tests
       id: run_tests
-      run: npx playwright test
+      run: npx playwright test --workers=4
       continue-on-error: true # Important: Allows workflow to continue to create PR
 
     - name: Upload Playwright Report and Traces
