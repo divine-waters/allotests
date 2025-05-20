@@ -6,19 +6,27 @@ on:
   pull_request:
     branches: [ main ]
 
+# Add permissions at the workflow level
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test:
     timeout-minutes: 5  # Reduced from 60 to 5 minutes
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
+    # Remove job-level permissions since they're now at workflow level
+    # permissions:
+    #   contents: write
+    #   pull-requests: write
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        # Add token with write permissions
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up Node.js
       uses: actions/setup-node@v4
@@ -49,8 +57,8 @@ jobs:
       if: steps.run_tests.outcome == 'failure'
       uses: peter-evans/create-pull-request@v6
       with:
-        # Personal Access Token with repo scope for creating PRs
-        token: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN instead of custom PAT
+        # Use the default GITHUB_TOKEN which now has the correct permissions
+        token: ${{ secrets.GITHUB_TOKEN }}
         commit-message: "fix: Automated PR for failing Playwright tests"
         branch: "fix/failing-tests-${{ github.run_id }}"
         base: ${{ github.ref_name }}
