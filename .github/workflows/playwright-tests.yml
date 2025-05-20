@@ -1,4 +1,4 @@
-name: Playwright Tests & PR on Failure
+name: Playwright Tests
 
 on:
   push:
@@ -6,27 +6,16 @@ on:
   pull_request:
     branches: [ main ]
 
-# Add permissions at the workflow level
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   test:
     timeout-minutes: 5  # Reduced from 60 to 5 minutes
     runs-on: ubuntu-latest
-    # Remove job-level permissions since they're now at workflow level
-    # permissions:
-    #   contents: write
-    #   pull-requests: write
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        # Add token with write permissions
-        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up Node.js
       uses: actions/setup-node@v4
@@ -41,49 +30,12 @@ jobs:
       run: npx playwright install --with-deps chromium  # Only install Chromium for faster setup
 
     - name: Run Playwright tests
-      id: run_tests
       run: npx playwright test --workers=4 --project=chromium  # Only run in Chromium
-      continue-on-error: true
 
     - name: Upload Playwright Report
-      uses: actions/upload-artifact@v4
       if: always()
+      uses: actions/upload-artifact@v4
       with:
         name: playwright-report-${{ github.run_id }}
         path: playwright-report/
         retention-days: 7  # Keep reports for 7 days
-
-    - name: Create Pull Request on Failure
-      if: steps.run_tests.outcome == 'failure'
-      uses: peter-evans/create-pull-request@v6
-      with:
-        # Use the default GITHUB_TOKEN which now has the correct permissions
-        token: ${{ secrets.GITHUB_TOKEN }}
-        commit-message: "fix: Automated PR for failing Playwright tests"
-        branch: "fix/failing-tests-${{ github.run_id }}"
-        base: ${{ github.ref_name }}
-        title: "🚨 Automated PR: Fix failing Playwright tests"
-        body: |
-          ## Playwright Test Failures
-
-          Tests failed on commit `${{ github.sha }}`.
-          
-          ### Test Report
-          [View Test Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-          ### Key Metrics
-          - LCP (Largest Contentful Paint)
-          - CLS (Cumulative Layout Shift)
-          - TTFB (Time to First Byte)
-
-          ### Next Steps
-          1. Review the test report
-          2. Check performance metrics
-          3. Address any failing tests
-        labels: bug, automated-pr, playwright-failure
-        assignees: ${{ github.actor }}
-        delete-branch: true
-        push-to-fork: ''
-        author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
-        committer: GitHub <noreply@github.com>
-        signoff: true
