@@ -49,7 +49,8 @@ jobs:
       if: steps.run_tests.outcome == 'failure'
       uses: peter-evans/create-pull-request@v6
       with:
-        token: ${{ secrets.PLAYWRIGHT_PAT }}
+        # Personal Access Token with repo scope for creating PRs
+        token: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN instead of custom PAT
         commit-message: "fix: Automated PR for failing Playwright tests"
         branch: "fix/failing-tests-${{ github.run_id }}"
         base: ${{ github.ref_name }}
