@@ -226,9 +226,25 @@ test.describe('Competitor Performance Analysis', () => {
           waitUntil: 'domcontentloaded',
           timeout: 20000 // 20 second timeout
         });
+        console.log(`✅ Successfully navigated to ${competitor.url}`);
+        
         await page.waitForLoadState('load', { timeout: 15000 });
+        console.log(`✅ Page fully loaded for ${competitor.name}`);
+        
+        // Log initial performance metrics
+        const initialMetrics = await page.evaluate(() => ({
+          domContentLoaded: performance.timing.domContentLoadedEventEnd - performance.timing.navigationStart,
+          loadTime: performance.timing.loadEventEnd - performance.timing.navigationStart,
+          resourceCount: performance.getEntriesByType('resource').length,
+          domSize: document.getElementsByTagName('*').length
+        }));
+        console.log(`📊 Initial Metrics for ${competitor.name}:`);
+        console.log(`   - DOM Content Loaded: ${initialMetrics.domContentLoaded}ms`);
+        console.log(`   - Total Load Time: ${initialMetrics.loadTime}ms`);
+        console.log(`   - Resource Count: ${initialMetrics.resourceCount}`);
+        console.log(`   - DOM Size: ${initialMetrics.domSize} nodes`);
       } catch (error) {
-        console.log(`Warning: Navigation timeout for ${competitor.name}, proceeding with available metrics`);
+        console.log(`⚠️ Warning: Navigation timeout for ${competitor.name}, proceeding with available metrics`);
       }
       
       // Collect only essential metrics
@@ -244,6 +260,7 @@ test.describe('Competitor Performance Analysis', () => {
               const entries = entryList.getEntries();
               if (entries.length > 0) {
                 lcp = entries[entries.length - 1].startTime;
+                console.log(`✅ LCP recorded: ${lcp.toFixed(0)}ms`);
               }
             }).observe({ type: 'largest-contentful-paint', buffered: true });
 
@@ -253,6 +270,7 @@ test.describe('Competitor Performance Analysis', () => {
                 const layoutShift = entry as LayoutShift;
                 if (!layoutShift.hadRecentInput) {
                   cls += layoutShift.value;
+                  console.log(`✅ CLS updated: ${cls.toFixed(3)}`);
                 }
               }
             }).observe({ type: 'layout-shift', buffered: true });
@@ -261,23 +279,36 @@ test.describe('Competitor Performance Analysis', () => {
             const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
             if (navEntry) {
               ttfb = navEntry.responseStart - navEntry.requestStart;
+              console.log(`✅ TTFB recorded: ${ttfb.toFixed(0)}ms`);
             }
 
             // Resolve after 3 seconds
-            setTimeout(() => resolve({ lcp, cls, ttfb }), 3000);
+            setTimeout(() => {
+              console.log(`✅ Metrics collection completed for ${competitor.name}`);
+              resolve({ lcp, cls, ttfb });
+            }, 3000);
           });
         }),
         new Promise<{ lcp: number; cls: number; ttfb: number }>((_, reject) => 
           setTimeout(() => reject(new Error('Metrics collection timeout')), 5000)
         )
-      ]).catch(() => ({
-        lcp: 0,
-        cls: 0,
-        ttfb: 0
-      }));
+      ]).catch((error) => {
+        console.log(`⚠️ Warning: ${error.message} for ${competitor.name}`);
+        return {
+          lcp: 0,
+          cls: 0,
+          ttfb: 0
+        };
+      });
 
       const score = calculateScore(metrics);
-      const { rating } = getRating(score);
+      const { rating, color } = getRating(score);
+      
+      console.log(`\n📈 Performance Score for ${competitor.name}:`);
+      console.log(`   Score: ${color}${score}/100\x1b[0m (${rating})`);
+      console.log(`   LCP: ${metrics.lcp.toFixed(0)}ms (${getMetricStatus(metrics.lcp, THRESHOLDS.lcp)})`);
+      console.log(`   CLS: ${metrics.cls.toFixed(3)} (${getMetricStatus(metrics.cls, THRESHOLDS.cls)})`);
+      console.log(`   TTFB: ${metrics.ttfb.toFixed(0)}ms (${getMetricStatus(metrics.ttfb, THRESHOLDS.ttfb)})`);
       
       results.push({
         name: competitor.name,
