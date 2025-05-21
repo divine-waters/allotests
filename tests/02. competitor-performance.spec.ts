@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { calculateScore, getRating, getMetricStatus, printTestHeader, printTestFooter } from './utils'; // Import from utils
+import { THRESHOLDS } from './constants';
+
 
 interface PerformanceMetrics {
   lcp: number;
@@ -105,28 +108,7 @@ const COMPETITORS: CompetitorSite[] = [
   }
 ];
 
-// Performance thresholds based on Core Web Vitals and competitive analysis
-const THRESHOLDS = {
-  lcp: {
-    excellent: 1000,   // 1s - Outstanding performance
-    veryGood: 1500,   // 1.5s - Very good performance
-    good: 2000,       // 2s - Good performance
-    poor: 4000        // 4s - Poor performance
-  },
-  cls: {
-    excellent: 0.05,  // 0.05 - Outstanding stability
-    veryGood: 0.075,  // 0.075 - Very good stability
-    good: 0.1,        // 0.1 - Good stability
-    poor: 0.25        // 0.25 - Poor stability
-  },
-  ttfb: {
-    excellent: 100,   // 100ms - Outstanding response
-    veryGood: 150,    // 150ms - Very good response
-    good: 200,        // 200ms - Good response
-    poor: 500         // 500ms - Poor response
-  }
-};
-
+// Add interface for LayoutShift entry (needed for PerformanceObserver)
 // Add interface for LayoutShift entry
 interface LayoutShift extends PerformanceEntry {
   value: number;
@@ -139,69 +121,12 @@ interface LayoutShift extends PerformanceEntry {
   }>;
 }
 
+// Add interface for PerformanceNavigationTiming (needed for TTFB)
 // Add interface for PerformanceNavigationTiming
 interface PerformanceNavigationTiming extends PerformanceEntry {
   responseEnd: number;
   responseStart: number;
   requestStart: number;
-}
-
-// Helper function to calculate individual metric scores on 0-100 scale with more granular scoring
-function calculateMetricScore(value: number, thresholds: { excellent: number; veryGood: number; good: number; poor: number }): number {
-  if (value <= thresholds.excellent) return 100;
-  if (value <= thresholds.veryGood) {
-    // Linear interpolation between excellent and very good
-    return Math.round(90 + ((thresholds.veryGood - value) / (thresholds.veryGood - thresholds.excellent)) * 10);
-  }
-  if (value <= thresholds.good) {
-    // Linear interpolation between very good and good
-    return Math.round(80 + ((thresholds.good - value) / (thresholds.good - thresholds.veryGood)) * 10);
-  }
-  if (value <= thresholds.poor) {
-    // Linear interpolation between good and poor
-    return Math.round(40 + ((thresholds.poor - value) / (thresholds.poor - thresholds.good)) * 40);
-  }
-  return Math.max(0, Math.round(40 * (thresholds.poor / value)));
-}
-
-function calculateScore(metrics: { lcp: number; cls: number; ttfb: number }): number {
-  const scores = {
-    lcp: calculateMetricScore(metrics.lcp, THRESHOLDS.lcp),
-    cls: calculateMetricScore(metrics.cls, THRESHOLDS.cls),
-    ttfb: calculateMetricScore(metrics.ttfb, THRESHOLDS.ttfb)
-  };
-
-  // Weight the metrics (LCP is most important, then TTFB, then CLS)
-  const weightedScore = (scores.lcp * 0.5) + (scores.ttfb * 0.3) + (scores.cls * 0.2);
-  return Math.round(weightedScore);
-}
-
-function getRating(score: number): { rating: string; color: string } {
-  if (score >= 95) return { rating: 'EXCELLENT', color: '\x1b[32m' }; // Green
-  if (score >= 85) return { rating: 'VERY GOOD', color: '\x1b[36m' }; // Cyan
-  if (score >= 75) return { rating: 'GOOD', color: '\x1b[34m' }; // Blue
-  if (score >= 65) return { rating: 'FAIR', color: '\x1b[33m' }; // Yellow
-  if (score >= 50) return { rating: 'NEEDS IMPROVEMENT', color: '\x1b[35m' }; // Magenta
-  return { rating: 'POOR', color: '\x1b[31m' }; // Red
-}
-
-// Helper function to get metric status with more granular ratings
-function getMetricStatus(value: number, threshold: { excellent: number; veryGood: number; good: number; poor: number }): string {
-  if (value <= threshold.excellent) return '\x1b[32mEXCELLENT\x1b[0m';
-  if (value <= threshold.veryGood) return '\x1b[92mVERY GOOD\x1b[0m';
-  if (value <= threshold.good) return '\x1b[34mGOOD\x1b[0m';
-  if (value <= threshold.poor) return '\x1b[33mNEEDS IMPROVEMENT\x1b[0m';
-  return '\x1b[31mPOOR\x1b[0m';
-}
-
-function printTestHeader(testName: string) {
-  console.log('\n' + '='.repeat(80));
-  console.log(` 🧪 ${testName} `.padStart(40 + testName.length/2, '=').padEnd(80, '='));
-  console.log('='.repeat(80) + '\n');
-}
-
-function printTestFooter() {
-  console.log('\n' + '='.repeat(80) + '\n');
 }
 
 test.describe('Competitor Performance Analysis', () => {
@@ -249,49 +174,79 @@ test.describe('Competitor Performance Analysis', () => {
       
       // Collect only essential metrics
       const metrics = await Promise.race([
-        page.evaluate(() => {
+        page.evaluate((thresholds) => { // Pass thresholds to the evaluate context
           return new Promise<{ lcp: number; cls: number; ttfb: number }>((resolve) => {
             let lcp = 0;
             let cls = 0;
             let ttfb = 0;
+            let lcpResolved = false;
+            let clsResolved = false;
+            let clsTimeout: NodeJS.Timeout | null = null;
             
+            // Final timeout to ensure the promise eventually resolves
+            const finalTimeout = setTimeout(() => {
+                console.log(`⚠️ Final metrics collection timeout reached inside evaluate.`);
+                resolve({ lcp, cls, ttfb }); // Resolve with whatever we have
+            }, 15000); // Increased timeout inside evaluate
+
             // LCP
-            new PerformanceObserver((entryList) => {
+            const lcpObserver = new PerformanceObserver((entryList) => {
               const entries = entryList.getEntries();
               if (entries.length > 0) {
                 lcp = entries[entries.length - 1].startTime;
                 console.log(`✅ LCP recorded: ${lcp.toFixed(0)}ms`);
+                lcpResolved = true;
+                checkCompletion();
               }
             }).observe({ type: 'largest-contentful-paint', buffered: true });
 
             // CLS
-            new PerformanceObserver((entryList) => {
+            const clsObserver = new PerformanceObserver((entryList) => {
               for (const entry of entryList.getEntries()) {
                 const layoutShift = entry as LayoutShift;
                 if (!layoutShift.hadRecentInput) {
                   cls += layoutShift.value;
                   console.log(`✅ CLS updated: ${cls.toFixed(3)}`);
+                  // Reset the CLS stability timeout whenever a shift occurs
+                  if (clsTimeout) clearTimeout(clsTimeout);
+                  clsTimeout = setTimeout(() => {
+                      console.log(`✅ CLS stability detected.`);
+                      clsResolved = true;
+                      checkCompletion();
+                  }, 1000); // Consider CLS stable if no shifts for 1 second
                 }
               }
             }).observe({ type: 'layout-shift', buffered: true });
 
             // TTFB
-            const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-            if (navEntry) {
-              ttfb = navEntry.responseStart - navEntry.requestStart;
-              console.log(`✅ TTFB recorded: ${ttfb.toFixed(0)}ms`);
+            // TTFB is usually available after navigation. Try to get it immediately.
+            // If not available, it will remain 0 initially and might be updated later
+            // if the navigation entry becomes available before the timeout.
+            // A more robust way might be to poll or wait for the navigation entry.
+            // For now, let's get it once.
+            const navEntries = performance.getEntriesByType('navigation');
+            if (navEntries.length > 0) {
+                const navEntry = navEntries[0] as PerformanceNavigationTiming;
+                ttfb = navEntry.responseStart - navEntry.requestStart;
+                console.log(`✅ TTFB recorded: ${ttfb.toFixed(0)}ms`);
             }
-
-            // Resolve after 3 seconds
-            setTimeout(() => {
-              console.log(`✅ Metrics collection completed for ${competitor.name}`);
-              resolve({ lcp, cls, ttfb });
-            }, 3000);
+            
+            // Function to check if we have enough data to resolve
+            function checkCompletion() {
+                // Resolve once LCP is recorded AND CLS is stable
+                if (lcpResolved && clsResolved) {
+                    clearTimeout(finalTimeout); // Clear the final timeout
+                    if (clsTimeout) clearTimeout(clsTimeout); // Clear the CLS stability timeout
+                    console.log(`✅ All core metrics collected.`);
+                    resolve({ lcp, cls, ttfb });
+                }
+            }
           });
-        }),
-        new Promise<{ lcp: number; cls: number; ttfb: number }>((_, reject) => 
-          setTimeout(() => reject(new Error('Metrics collection timeout')), 5000)
-        )
+        }, THRESHOLDS), // Pass THRESHOLDS to the evaluate context
+        // This outer timeout is a safeguard in case the inner evaluate promise hangs
+        new Promise<{ lcp: number; cls: number; ttfb: number }>((_, reject) =>
+          setTimeout(() => reject(new Error('Outer metrics collection timeout')), 20000) // Increased outer timeout
+        ) // Outer timeout should be longer than inner timeout
       ]).catch((error) => {
         console.log(`⚠️ Warning: ${error.message} for ${competitor.name}`);
         return {
@@ -447,3 +402,60 @@ test.describe('Competitor Performance Analysis', () => {
     printTestFooter();
   });
 }); 
+
+// Move these functions to utils.ts
+/*
+// Helper function to calculate individual metric scores on 0-100 scale with more granular scoring
+function calculateMetricScore(value: number, thresholds: { excellent: number; veryGood: number; good: number; poor: number }): number {
+  if (value <= thresholds.excellent) return 100;
+  if (value <= thresholds.veryGood) {
+    // Linear interpolation between excellent and very good
+    return Math.round(90 + ((thresholds.veryGood - value) / (thresholds.veryGood - thresholds.excellent)) * 10);
+  }
+  if (value <= thresholds.good) {
+    // Linear interpolation between very good and good
+    return Math.round(80 + ((thresholds.good - value) / (thresholds.good - thresholds.veryGood)) * 10);
+  }
+  if (value <= thresholds.poor) {
+    // Linear interpolation between good and poor
+    return Math.round(40 + ((thresholds.poor - value) / (thresholds.poor - thresholds.good)) * 40);
+  }
+  return Math.max(0, Math.round(40 * (thresholds.poor / value)));
+}
+
+function calculateScore(metrics: { lcp: number; cls: number; ttfb: number }): number {
+  const scores = {
+    lcp: calculateMetricScore(metrics.lcp, THRESHOLDS.lcp),
+    cls: calculateMetricScore(metrics.cls, THRESHOLDS.cls),
+    ttfb: calculateMetricScore(metrics.ttfb, THRESHOLDS.ttfb)
+  };
+
+  // Weight the metrics (LCP is most important, then TTFB, then CLS)
+  const weightedScore = (scores.lcp * 0.5) + (scores.ttfb * 0.3) + (scores.cls * 0.2);
+  return Math.round(weightedScore);
+}
+
+function getRating(score: number): { rating: string; color: string } {
+  if (score >= 95) return { rating: 'EXCELLENT', color: '\x1b[32m' }; // Green
+  if (score >= 85) return { rating: 'VERY GOOD', color: '\x1b[36m' }; // Cyan
+  if (score >= 75) return { rating: 'GOOD', color: '\x1b[34m' }; // Blue
+  if (score >= 65) return { rating: 'FAIR', color: '\x1b[33m' }; // Yellow
+  if (score >= 50) return { rating: 'NEEDS IMPROVEMENT', color: '\x1b[35m' }; // Magenta
+  return { rating: 'POOR', color: '\x1b[31m' }; // Red
+}
+
+// Helper function to get metric status with more granular ratings
+function getMetricStatus(value: number, threshold: { excellent: number; veryGood: number; good: number; poor: number }): string {
+  if (value <= threshold.excellent) return '\x1b[32mEXCELLENT\x1b[0m';
+  if (value <= threshold.veryGood) return '\x1b[92mVERY GOOD\x1b[0m';
+  if (value <= threshold.good) return '\x1b[34mGOOD\x1b[0m';
+  if (value <= threshold.poor) return '\x1b[33mNEEDS IMPROVEMENT\x1b[0m';
+  return '\x1b[31mPOOR\x1b[0m';
+}
+
+function printTestHeader(testName: string) {
+  console.log('\n' + '='.repeat(80));
+  console.log(` 🧪 ${testName} `.padStart(40 + testName.length/2, '=').padEnd(80, '='));
+  console.log('='.repeat(80) + '\n');
+}
+*/
