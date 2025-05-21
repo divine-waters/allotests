@@ -109,16 +109,19 @@ const COMPETITORS: CompetitorSite[] = [
 const THRESHOLDS = {
   lcp: {
     excellent: 1000,   // 1s - Outstanding performance
+    veryGood: 1500,   // 1.5s - Very good performance
     good: 2000,       // 2s - Good performance
     poor: 4000        // 4s - Poor performance
   },
   cls: {
     excellent: 0.05,  // 0.05 - Outstanding stability
+    veryGood: 0.075,  // 0.075 - Very good stability
     good: 0.1,        // 0.1 - Good stability
     poor: 0.25        // 0.25 - Poor stability
   },
   ttfb: {
     excellent: 100,   // 100ms - Outstanding response
+    veryGood: 150,    // 150ms - Very good response
     good: 200,        // 200ms - Good response
     poor: 500         // 500ms - Poor response
   }
@@ -144,11 +147,15 @@ interface PerformanceNavigationTiming extends PerformanceEntry {
 }
 
 // Helper function to calculate individual metric scores on 0-100 scale with more granular scoring
-function calculateMetricScore(value: number, thresholds: { excellent: number; good: number; poor: number }): number {
+function calculateMetricScore(value: number, thresholds: { excellent: number; veryGood: number; good: number; poor: number }): number {
   if (value <= thresholds.excellent) return 100;
+  if (value <= thresholds.veryGood) {
+    // Linear interpolation between excellent and very good
+    return Math.round(90 + ((thresholds.veryGood - value) / (thresholds.veryGood - thresholds.excellent)) * 10);
+  }
   if (value <= thresholds.good) {
-    // Linear interpolation between excellent and good
-    return Math.round(80 + ((thresholds.good - value) / (thresholds.good - thresholds.excellent)) * 20);
+    // Linear interpolation between very good and good
+    return Math.round(80 + ((thresholds.good - value) / (thresholds.good - thresholds.veryGood)) * 10);
   }
   if (value <= thresholds.poor) {
     // Linear interpolation between good and poor
@@ -179,8 +186,9 @@ function getRating(score: number): { rating: string; color: string } {
 }
 
 // Helper function to get metric status with more granular ratings
-function getMetricStatus(value: number, threshold: { excellent: number; good: number; poor: number }): string {
+function getMetricStatus(value: number, threshold: { excellent: number; veryGood: number; good: number; poor: number }): string {
   if (value <= threshold.excellent) return '\x1b[32mEXCELLENT\x1b[0m';
+  if (value <= threshold.veryGood) return '\x1b[92mVERY GOOD\x1b[0m';
   if (value <= threshold.good) return '\x1b[34mGOOD\x1b[0m';
   if (value <= threshold.poor) return '\x1b[33mNEEDS IMPROVEMENT\x1b[0m';
   return '\x1b[31mPOOR\x1b[0m';
@@ -218,7 +226,7 @@ test.describe('Competitor Performance Analysis', () => {
           waitUntil: 'domcontentloaded',
           timeout: 20000 // 20 second timeout
         });
-        await page.waitForLoadState('load', { timeout: 10000 });
+        await page.waitForLoadState('load', { timeout: 15000 });
       } catch (error) {
         console.log(`Warning: Navigation timeout for ${competitor.name}, proceeding with available metrics`);
       }

@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-
 # Playwright
 node_modules/
 /test-results/
@@ -143,4 +141,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
->>>>>>> a5d13732e149267c09c618806a081121378be34a
+
+trace-3g-chromium
+
