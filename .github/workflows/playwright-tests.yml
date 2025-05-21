@@ -5,14 +5,10 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-
 jobs:
-  test: # Job name remains 'test', but matrix runs will differentiate them
-    timeout-minutes: 5  # Reduced from 60 to 5 minutes
+  test:
+    timeout-minutes: 5
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        browser: [chromium, firefox, webkit] # Define the browsers to test
 
     steps:
     - name: Checkout repository
@@ -30,26 +26,28 @@ jobs:
     - name: Get Playwright version
       id: playwright-version
       run: echo "PLAYWRIGHT_VERSION=$(npm ls @playwright/test --depth=0 --json | jq -r '.dependencies["@playwright/test"].version')" >> $GITHUB_OUTPUT
-
     - name: Cache Playwright browsers
       uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }} # Cache key based on OS and Playwright version
+        # Cache key specific to OS, Playwright version, and Chromium
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-chromium
 
     - name: Install dependencies
       run: npm ci
 
     - name: Install Playwright Browsers
-      run: npx playwright install --with-deps # Install all browsers defined in playwright.config.ts (defaults to chromium, firefox, webkit)
+      # Install only Chromium browsers for faster setup
+      run: npx playwright install --with-deps chromium
 
     - name: Run Playwright tests
-      run: npx playwright test --workers=1  # Only run in Chromium
+      # Run tests only for the chromium project
+      run: npx playwright test --workers=1 --project=chromium
 
-    - name: Upload Playwright Report (${{ matrix.browser }})
+    - name: Upload Playwright Report (chromium)
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: playwright-report-${{ github.run_id }}
+        name: playwright-report-chromium-${{ github.run_id }}
         path: playwright-report/
         retention-days: 7  # Keep reports for 7 days

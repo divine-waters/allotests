@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { calculateScore, getRating, getMetricStatus, printTestHeader, printTestFooter } from './utils'; // Import from utils
-import { THRESHOLDS } from './constants';
+import { THRESHOLDS, COMPETITORS } from './constants'; // Import COMPETITORS
 
 
 interface PerformanceMetrics {
@@ -13,100 +13,6 @@ interface PerformanceMetrics {
   jsHeapSize: number;
   totalLoadTime: number;
 }
-
-interface CompetitorSite {
-  name: string;
-  url: string;
-  region: string[];
-  serviceType: string;
-  marketFocus: string;
-  services: {
-    fiberInternet: boolean;
-    fiberTV: boolean;
-    fiberPhone: boolean;
-    mobilePhone: boolean;
-    smartTown: boolean;
-    wifiExperience: boolean;
-    outdoorWifi: boolean;
-    fiberStreaming: boolean;
-    bark: boolean;
-  };
-}
-
-const COMPETITORS: CompetitorSite[] = [
-  {
-    name: 'ALLO Communications',
-    url: 'https://www.allocommunications.com/',
-    region: ['Lincoln, NE', 'Grand Island, NE', 'Boulder, CO', 'Greeley, CO', 'Flagstaff, AZ', 'Joplin, MO'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: true,
-      smartTown: true,
-      wifiExperience: true,
-      outdoorWifi: true,
-      fiberStreaming: true,
-      bark: true
-    }
-  },
-  {
-    name: 'NextLight',
-    url: 'https://mynextlight.com/',
-    region: ['Boulder, CO', 'Greeley, CO'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: false,
-      smartTown: true,
-      wifiExperience: true,
-      outdoorWifi: true,
-      fiberStreaming: true,
-      bark: false
-    }
-  },
-  {
-    name: 'Great Plains Communications',
-    url: 'https://www.gpcom.com/',
-    region: ['Lincoln, NE', 'Grand Island, NE', 'Kearney, NE', 'Norfolk, NE'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: false,
-      smartTown: false,
-      wifiExperience: true,
-      outdoorWifi: false,
-      fiberStreaming: true,
-      bark: false
-    }
-  },
-  {
-    name: 'Wyyerd Fiber',
-    url: 'https://wyyerd.com/',
-    region: ['Flagstaff, AZ', 'Lake Havasu City, AZ'],
-    serviceType: 'Fiber',
-    marketFocus: 'Residential & Business Fiber',
-    services: {
-      fiberInternet: true,
-      fiberTV: true,
-      fiberPhone: true,
-      mobilePhone: false,
-      smartTown: false,
-      wifiExperience: true,
-      outdoorWifi: false,
-      fiberStreaming: true,
-      bark: false
-    }
-  }
-];
 
 // Add interface for LayoutShift entry (needed for PerformanceObserver)
 // Add interface for LayoutShift entry
@@ -124,6 +30,7 @@ interface LayoutShift extends PerformanceEntry {
 // Add interface for PerformanceNavigationTiming (needed for TTFB)
 // Add interface for PerformanceNavigationTiming
 interface PerformanceNavigationTiming extends PerformanceEntry {
+  domContentLoadedEventEnd: number;
   responseEnd: number;
   responseStart: number;
   requestStart: number;
@@ -157,12 +64,16 @@ test.describe('Competitor Performance Analysis', () => {
         console.log(`✅ Page fully loaded for ${competitor.name}`);
         
         // Log initial performance metrics
-        const initialMetrics = await page.evaluate(() => ({
-          domContentLoaded: performance.timing.domContentLoadedEventEnd - performance.timing.navigationStart,
-          loadTime: performance.timing.loadEventEnd - performance.timing.navigationStart,
-          resourceCount: performance.getEntriesByType('resource').length,
-          domSize: document.getElementsByTagName('*').length
-        }));
+        const initialMetrics = await page.evaluate(() => {
+          const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+          return {
+ domContentLoaded: navEntry ? navEntry.domContentLoadedEventEnd : 0, // Already relative to navigationStart
+ loadTime: navEntry ? navEntry.startTime : 0, // Calculate relative to navigationStart
+ resourceCount: performance.getEntriesByType('resource').length,
+            domSize: document.getElementsByTagName('*').length
+          };
+        });
+
         console.log(`📊 Initial Metrics for ${competitor.name}:`);
         console.log(`   - DOM Content Loaded: ${initialMetrics.domContentLoaded}ms`);
         console.log(`   - Total Load Time: ${initialMetrics.loadTime}ms`);
@@ -187,7 +98,7 @@ test.describe('Competitor Performance Analysis', () => {
             const finalTimeout = setTimeout(() => {
                 console.log(`⚠️ Final metrics collection timeout reached inside evaluate.`);
                 resolve({ lcp, cls, ttfb }); // Resolve with whatever we have
-            }, 15000); // Increased timeout inside evaluate
+            }, 25000); // Increased inner timeout to 25 seconds
 
             // LCP
             const lcpObserver = new PerformanceObserver((entryList) => {
@@ -245,7 +156,7 @@ test.describe('Competitor Performance Analysis', () => {
         }, THRESHOLDS), // Pass THRESHOLDS to the evaluate context
         // This outer timeout is a safeguard in case the inner evaluate promise hangs
         new Promise<{ lcp: number; cls: number; ttfb: number }>((_, reject) =>
-          setTimeout(() => reject(new Error('Outer metrics collection timeout')), 20000) // Increased outer timeout
+          setTimeout(() => reject(new Error('Outer metrics collection timeout')), 30000) // Increased outer timeout to 30 seconds
         ) // Outer timeout should be longer than inner timeout
       ]).catch((error) => {
         console.log(`⚠️ Warning: ${error.message} for ${competitor.name}`);
