@@ -306,9 +306,80 @@ test.describe('Competitor Performance Analysis', () => {
       
       console.log(`\n📈 Performance Score for ${competitor.name}:`);
       console.log(`   Score: ${color}${score}/100\x1b[0m (${rating})`);
-      console.log(`   LCP: ${metrics.lcp.toFixed(0)}ms (${getMetricStatus(metrics.lcp, THRESHOLDS.lcp)})`);
-      console.log(`   CLS: ${metrics.cls.toFixed(3)} (${getMetricStatus(metrics.cls, THRESHOLDS.cls)})`);
-      console.log(`   TTFB: ${metrics.ttfb.toFixed(0)}ms (${getMetricStatus(metrics.ttfb, THRESHOLDS.ttfb)})`);
+      
+      // LCP Analysis
+      const lcpStatus = getMetricStatus(metrics.lcp, THRESHOLDS.lcp);
+      console.log(`   LCP: ${metrics.lcp.toFixed(0)}ms (${lcpStatus})`);
+      if (metrics.lcp > THRESHOLDS.lcp.poor) {
+        console.log('     ⚠️ LCP needs improvement');
+        console.log('     Recommendations:');
+        console.log('     - Optimize largest contentful paint element');
+        console.log('     - Review server response time');
+        console.log('     - Consider using a CDN');
+      } else if (metrics.lcp <= THRESHOLDS.lcp.excellent) {
+        console.log('     ✅ Excellent LCP performance!');
+      } else if (metrics.lcp <= THRESHOLDS.lcp.veryGood) {
+        console.log('     🌟 Very good LCP performance');
+      } else {
+        console.log('     ✅ LCP is within acceptable range');
+      }
+
+      // CLS Analysis
+      const clsStatus = getMetricStatus(metrics.cls, THRESHOLDS.cls);
+      console.log(`   CLS: ${metrics.cls.toFixed(3)} (${clsStatus})`);
+      if (metrics.cls > THRESHOLDS.cls.poor) {
+        console.log('     ⚠️ CLS needs improvement');
+        console.log('     Recommendations:');
+        console.log('     - Review layout shifts during page load');
+        console.log('     - Set explicit dimensions for media');
+        console.log('     - Avoid inserting content above existing content');
+      } else if (metrics.cls <= THRESHOLDS.cls.excellent) {
+        console.log('     ✅ Excellent CLS performance!');
+      } else if (metrics.cls <= THRESHOLDS.cls.veryGood) {
+        console.log('     🌟 Very good CLS performance');
+      } else {
+        console.log('     ✅ CLS is within acceptable range');
+      }
+
+      // TTFB Analysis
+      const ttfbStatus = getMetricStatus(metrics.ttfb, THRESHOLDS.ttfb);
+      console.log(`   TTFB: ${metrics.ttfb.toFixed(0)}ms (${ttfbStatus})`);
+      if (metrics.ttfb > THRESHOLDS.ttfb.poor) {
+        console.log('     ⚠️ TTFB needs improvement');
+        console.log('     Recommendations:');
+        console.log('     - Optimize server response time');
+        console.log('     - Review server-side caching');
+        console.log('     - Consider using a CDN');
+      } else if (metrics.ttfb <= THRESHOLDS.ttfb.excellent) {
+        console.log('     ✅ Excellent TTFB performance!');
+      } else if (metrics.ttfb <= THRESHOLDS.ttfb.veryGood) {
+        console.log('     🌟 Very good TTFB performance');
+      } else {
+        console.log('     ✅ TTFB is within acceptable range');
+      }
+
+      // Overall Performance Summary
+      const passingMetrics = [
+        metrics.lcp <= THRESHOLDS.lcp.good,
+        metrics.cls <= THRESHOLDS.cls.good,
+        metrics.ttfb <= THRESHOLDS.ttfb.good
+      ].filter(Boolean).length;
+
+      const totalMetrics = 3;
+      const performanceScore = (passingMetrics / totalMetrics) * 100;
+
+      console.log(`\n📊 Overall Performance Summary for ${competitor.name}:`);
+      console.log(`   ${passingMetrics}/${totalMetrics} metrics passing thresholds`);
+      
+      if (performanceScore === 100) {
+        console.log('   🏆 All metrics are excellent or very good!');
+      } else if (performanceScore >= 66) {
+        console.log('   🌟 Most metrics are within acceptable range');
+      } else if (performanceScore >= 33) {
+        console.log('   ⚠️ Some metrics need improvement');
+      } else {
+        console.log('   ❌ Most metrics need significant improvement');
+      }
       
       results.push({
         name: competitor.name,
