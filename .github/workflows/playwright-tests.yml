@@ -80,8 +80,8 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs-${{ matrix.browser }}-${{ matrix.test_suite }}-${{ github.run_id }}
-        path: test-logs/
+        name: browser-console-logs-${{ matrix.browser }}-${{ matrix.test_suite }}-${{ github.run_id }}
+        path: browser-console-logs/
         retention-days: 7
         if-no-files-found: warn
 
@@ -102,7 +102,7 @@ jobs:
         
         # Copy all artifacts into the combined directory
         cp -r playwright-report/* combined-artifacts/ || true
-        cp -r test-logs/* combined-artifacts/ || true
+        cp -r browser-console-logs/* combined-artifacts/ || true
         cp *.png combined-artifacts/ || true
         
         # Create a summary file
@@ -120,7 +120,7 @@ jobs:
         echo "" >> combined-artifacts/README.md
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
-        echo "- Test Logs: test-logs/*.json" >> combined-artifacts/README.md
+        echo "- Test Logs: browser-console-logs/*.json" >> combined-artifacts/README.md
         echo "- Test Screenshots: *.png" >> combined-artifacts/README.md
 
     - name: Upload Combined Artifact

@@ -201,7 +201,7 @@ function mergeDuplicateLogs(logs: LogEntry[]): LogEntry[] {
 // Helper to write logs to file with locking
 async function writeLogsToFile(): Promise<void> {
   const timestamp = new Date().toISOString();
-  const logDir = path.join(process.cwd(), 'test-logs');
+  const logDir = path.join(process.cwd(), 'browser-console-logs');
   
   // Create logs directory if it doesn't exist
   if (!fs.existsSync(logDir)) {
@@ -210,7 +210,7 @@ async function writeLogsToFile(): Promise<void> {
 
   // Write one file per browser type
   for (const [browserId, logs] of browserLogs.entries()) {
-    const logFile = path.join(logDir, `test-logs-${browserId}.json`);
+    const logFile = path.join(logDir, `browser-console-logs-${browserId}.json`);
     
     // Initialize empty log file if it doesn't exist
     if (!fs.existsSync(logFile)) {
