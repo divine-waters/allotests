@@ -11,22 +11,62 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        # Define all combinations we want to run
+        # Define all combinations for home tests
         include:
-          # Chromium runs both home spec and other tests
-          - browser: chromium
-            test_suite: home
+          # Home tests run in all browsers
+          - test_suite: home-modal
+            browser: chromium
             workers: 3
-          - browser: chromium
-            test_suite: other
+            test_file: modal.spec.ts
+          - test_suite: home-modal
+            browser: firefox
+            workers: 3
+            test_file: modal.spec.ts
+          - test_suite: home-modal
+            browser: webkit
+            workers: 3
+            test_file: modal.spec.ts
+          - test_suite: home-navigation
+            browser: chromium
+            workers: 3
+            test_file: navigation.spec.ts
+          - test_suite: home-navigation
+            browser: firefox
+            workers: 3
+            test_file: navigation.spec.ts
+          - test_suite: home-navigation
+            browser: webkit
+            workers: 3
+            test_file: navigation.spec.ts
+          - test_suite: home-url
+            browser: chromium
+            workers: 3
+            test_file: url-validation.spec.ts
+          - test_suite: home-url
+            browser: firefox
+            workers: 3
+            test_file: url-validation.spec.ts
+          - test_suite: home-url
+            browser: webkit
+            workers: 3
+            test_file: url-validation.spec.ts
+          - test_suite: home-form
+            browser: chromium
+            workers: 3
+            test_file: form.spec.ts
+          - test_suite: home-form
+            browser: firefox
+            workers: 3
+            test_file: form.spec.ts
+          - test_suite: home-form
+            browser: webkit
+            workers: 3
+            test_file: form.spec.ts
+          # Other tests run only in chromium
+          - test_suite: other
+            browser: chromium
             workers: 1
-          # Firefox and WebKit only run home spec
-          - browser: firefox
-            test_suite: home
-            workers: 3
-          - browser: webkit
-            test_suite: home
-            workers: 3
+            test_file: ""
     runs-on: ubuntu-latest
 
     steps:
@@ -60,12 +100,12 @@ jobs:
 
     - name: Run Playwright tests
       run: |
-        if [ "${{ matrix.test_suite }}" = "home" ]; then
-          # Run home spec with specified workers in the current browser
-          npx playwright test --workers=${{ matrix.workers }} --grep "Signup Links Verification" --project=${{ matrix.browser }}
+        if [[ "${{ matrix.test_suite }}" == home-* ]]; then
+          # Run specific home test file
+          npx playwright test tests/home/${{ matrix.test_file }} --workers=${{ matrix.workers }} --project=${{ matrix.browser }}
         else
-          # Run all other tests with 1 worker in Chromium
-          npx playwright test --workers=${{ matrix.workers }} --grep-invert "Signup Links Verification" --project=chromium
+          # Run all other tests in chromium
+          npx playwright test --workers=${{ matrix.workers }} --project=chromium --grep-invert "Signup Links Verification"
         fi
 
     - name: Upload Playwright Report
@@ -117,6 +157,9 @@ jobs:
         echo "- Browser: ${{ matrix.browser }}" >> combined-artifacts/README.md
         echo "- Test Suite: ${{ matrix.test_suite }}" >> combined-artifacts/README.md
         echo "- Workers: ${{ matrix.workers }}" >> combined-artifacts/README.md
+        if [[ "${{ matrix.test_suite }}" == home-* ]]; then
+          echo "- Test File: ${{ matrix.test_file }}" >> combined-artifacts/README.md
+        fi
         echo "" >> combined-artifacts/README.md
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
