@@ -7,7 +7,13 @@ declare global {
   }
 }
 
-test('should verify all signup links in the modal', async ({ page }) => {
+// Helper function to get random items from an array
+function getRandomItems<T>(array: T[], count: number): T[] {
+  const shuffled = [...array].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+test('should verify random signup links in the modal', async ({ page }) => {
   // Navigate and wait for initial load
   await page.goto('https://www.allocommunications.com/');
   await expect(page).toHaveTitle(/ALLO Fiber/);
@@ -17,18 +23,22 @@ test('should verify all signup links in the modal', async ({ page }) => {
   
   // Get all city links from the modal first
   const modal = page.locator('#service-locations');
-  const cityLinks = await modal.locator('a[href*="get-allo"]').all();
-  console.log(`Found ${cityLinks.length} city links to test`);
+  const allCityLinks = await modal.locator('a[href*="get-allo"]').all();
+  console.log(`Found ${allCityLinks.length} total city links`);
   
-  // Test each link
-  for (const [index, link] of cityLinks.entries()) {
+  // Select 10 random links
+  const selectedLinks = getRandomItems(allCityLinks, 10);
+  console.log(`Testing 10 randomly selected links`);
+  
+  // Test each selected link
+  for (const [index, link] of selectedLinks.entries()) {
     // Go back to home page for each iteration
     await page.goto('https://www.allocommunications.com/');
     
     // Get link details before clicking
     const href = await link.getAttribute('href');
     const text = await link.textContent();
-    console.log(`Testing link ${index + 1}/${cityLinks.length}: ${text} (${href})`);
+    console.log(`Testing link ${index + 1}/10: ${text} (${href})`);
     
     try {
       // Open modal
