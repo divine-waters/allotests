@@ -65,10 +65,10 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: error-screenshots-chromium-${{ github.run_id }}
-        path: error-*.png
+        name: test-screenshots-chromium-${{ github.run_id }}
+        path: "*.png"
         retention-days: 7
-        if-no-files-found: warn  # Warn if no screenshots are found
+        if-no-files-found: warn
 
     - name: Create Combined Artifact
       if: always()
@@ -79,7 +79,7 @@ jobs:
         # Copy all artifacts into the combined directory
         cp -r playwright-report/* combined-artifacts/ || true
         cp -r test-logs/* combined-artifacts/ || true
-        cp error-*.png combined-artifacts/ || true
+        cp *.png combined-artifacts/ || true
         
         # Create a summary file
         echo "Test Run Summary" > combined-artifacts/README.md
@@ -92,7 +92,7 @@ jobs:
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
         echo "- Test Logs: test-logs/*.json" >> combined-artifacts/README.md
-        echo "- Error Screenshots: error-*.png" >> combined-artifacts/README.md
+        echo "- Test Screenshots: *.png" >> combined-artifacts/README.md
 
     - name: Upload Combined Artifact
       if: always()
