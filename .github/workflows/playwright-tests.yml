@@ -17,27 +17,27 @@ jobs:
           - test_suite: home-modal
             browser: chromium
             workers: 3
-            test_file: modal.spec.ts
+            test_file: 01-modal.spec.ts
           - test_suite: home-modal
             browser: firefox
             workers: 3
-            test_file: modal.spec.ts
+            test_file: 01-modal.spec.ts
           - test_suite: home-modal
             browser: webkit
             workers: 3
-            test_file: modal.spec.ts
+            test_file: 01-modal.spec.ts
           - test_suite: home-navigation
             browser: chromium
             workers: 3
-            test_file: navigation.spec.ts
+            test_file: 00-navigation.spec.ts
           - test_suite: home-navigation
             browser: firefox
             workers: 3
-            test_file: navigation.spec.ts
+            test_file: 00-navigation.spec.ts
           - test_suite: home-navigation
             browser: webkit
             workers: 3
-            test_file: navigation.spec.ts
+            test_file: 00-navigation.spec.ts
           - test_suite: home-url
             browser: chromium
             workers: 3
@@ -53,15 +53,15 @@ jobs:
           - test_suite: home-form
             browser: chromium
             workers: 3
-            test_file: form.spec.ts
+            test_file: 02-form.spec.ts
           - test_suite: home-form
             browser: firefox
             workers: 3
-            test_file: form.spec.ts
+            test_file: 02-form.spec.ts
           - test_suite: home-form
             browser: webkit
             workers: 3
-            test_file: form.spec.ts
+            test_file: 02-form.spec.ts
           # Other tests run only in chromium
           - test_suite: other
             browser: chromium

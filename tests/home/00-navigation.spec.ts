@@ -44,7 +44,7 @@ async function retryWithTimeout<T>(
   throw lastError;
 }
 
-test.describe('Signup Form Validation', () => {
+test.describe('Signup Navigation Flow', () => {
   // Clear logs at the start of the test run
   test.beforeAll(async () => {
     clearLogs();
@@ -94,57 +94,49 @@ test.describe('Signup Form Validation', () => {
     await context.close();
   });
 
-  test('should load address form for each city', async ({ page }, testInfo) => {
+  test('should navigate to signup page from modal', async ({ page }, testInfo) => {
+    test.setTimeout(120000); // 2 minutes total timeout
+    
     for (const [index, linkData] of selectedLinks.entries()) {
-      await test.step(`verify address form for ${linkData.text}`, async () => {
-        console.log(`Testing form ${index + 1}/3: ${linkData.text}`);
+      await test.step(`navigate to signup for ${linkData.text}`, async () => {
+        // Go back to home page
+        await page.goto('https://www.allocommunications.com/');
+        
+        console.log(`Testing navigation ${index + 1}/3: ${linkData.text}`);
         
         try {
-          // Navigate to signup page
-          await page.goto(linkData.href, { 
-            waitUntil: 'domcontentloaded',
-            timeout: 15000 
+          // Open modal and click link
+          await page.evaluate(() => {
+            const $ = window.jQuery;
+            $('#service-locations').modal('show');
           });
+          
+          const modal = page.locator('#service-locations');
+          await modal.waitFor({ state: 'visible', timeout: 5000 });
+          
+          const link = page.locator(linkData.selector);
+          await link.waitFor({ state: 'visible', timeout: 5000 });
+          
+          // Click the link and wait for URL change
+          await link.click();
+          await page.waitForURL(/get-allo/, { timeout: 15000 });
           
           // Wait for loading to complete
           await page.locator('progressbar[aria-label="Loading"]').waitFor({ state: 'hidden', timeout: 10000 });
           
-          // Verify address input is present and interactive
-          const streetAddressInput = page.getByRole('combobox', { name: 'Street Address' });
-          await retryWithTimeout(
-            () => streetAddressInput.waitFor({ state: 'visible', timeout: 10000 }),
-            10000,
-            1  // Retry once
-          );
+          // Verify we're on the signup page
+          await expect(page).toHaveURL(/get-allo/);
+          await expect(page.getByRole('heading', { name: 'Sign Up For ALLO' })).toBeVisible();
           
-          // Verify input is enabled and has placeholder
-          await expect(streetAddressInput).toBeEnabled();
-          await expect(streetAddressInput).toHaveAttribute('placeholder');
-          
-          // Verify city and state are pre-filled
-          const cityInput = page.getByRole('textbox', { name: 'City' });
-          const stateInput = page.getByRole('combobox', { name: 'State' });
-          
-          await expect(cityInput).toBeVisible();
-          await expect(stateInput).toBeVisible();
-          
-          // Verify city matches the selected location
-          const cityValue = await cityInput.inputValue();
-          expect(linkData.text.toLowerCase()).toContain(cityValue.toLowerCase());
-          
-          // Verify state is valid
-          const stateValue = await stateInput.inputValue();
-          expect(['NE', 'CO']).toContain(stateValue);
-          
-          console.log(`✓ Successfully verified form for ${linkData.text}`);
+          console.log(`✓ Successfully navigated to ${linkData.text} signup page`);
           
         } catch (error) {
-          console.error(`✗ Failed to verify form for ${linkData.text}:`, error);
+          console.error(`✗ Failed to navigate to ${linkData.text}:`, error);
           logTestError(error, `${testInfo.title} - ${linkData.text}`);
           
           try {
             await page.screenshot({ 
-              path: `error-form-${linkData.text.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`,
+              path: `error-nav-${linkData.text.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`,
               fullPage: false
             });
           } catch (screenshotError) {

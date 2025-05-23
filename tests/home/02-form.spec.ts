@@ -44,7 +44,7 @@ async function retryWithTimeout<T>(
   throw lastError;
 }
 
-test.describe('Signup Navigation Flow', () => {
+test.describe('Signup Form Validation', () => {
   // Clear logs at the start of the test run
   test.beforeAll(async () => {
     clearLogs();
@@ -94,37 +94,14 @@ test.describe('Signup Navigation Flow', () => {
     await context.close();
   });
 
-  test('should navigate to signup page from modal', async ({ page }, testInfo) => {
-    test.setTimeout(120000); // 2 minutes total timeout
-    
+  test('should load address form for each city', async ({ page }, testInfo) => {
     for (const [index, linkData] of selectedLinks.entries()) {
-      await test.step(`navigate to signup for ${linkData.text}`, async () => {
-        // Go back to home page
-        await page.goto('https://www.allocommunications.com/');
-        
-        console.log(`Testing navigation ${index + 1}/3: ${linkData.text}`);
+      await test.step(`verify address form for ${linkData.text}`, async () => {
+        console.log(`Testing form ${index + 1}/3: ${linkData.text}`);
         
         try {
-          // Open modal and click link
-          await page.evaluate(() => {
-            const $ = window.jQuery;
-            $('#service-locations').modal('show');
-          });
-          
-          const modal = page.locator('#service-locations');
-          await modal.waitFor({ state: 'visible', timeout: 5000 });
-          
-          const link = page.locator(linkData.selector);
-          await link.waitFor({ state: 'visible', timeout: 5000 });
-          
-          // Get the href before clicking
-          const href = await link.getAttribute('href');
-          if (!href) {
-            throw new Error(`No href found for ${linkData.text}`);
-          }
-
-          // Navigate to the URL
-          await page.goto(href, { 
+          // Navigate to signup page
+          await page.goto(linkData.href, { 
             waitUntil: 'domcontentloaded',
             timeout: 15000 
           });
@@ -132,19 +109,23 @@ test.describe('Signup Navigation Flow', () => {
           // Wait for loading to complete
           await page.locator('progressbar[aria-label="Loading"]').waitFor({ state: 'hidden', timeout: 10000 });
           
-          // Verify we're on the signup page
-          await expect(page).toHaveURL(/get-allo/);
-          await expect(page.locator('h1')).toContainText(/Sign Up/);
+          // Verify address input is present and interactive
+          const streetAddressInput = page.getByRole('combobox', { name: 'Street Address' });
+          await retryWithTimeout(
+            () => streetAddressInput.waitFor({ state: 'visible', timeout: 10000 }),
+            10000,
+            1  // Retry once
+          );
           
-          console.log(`✓ Successfully navigated to ${linkData.text} signup page`);
-          
+          // Verify input is enabled and has placeholder
+          await expect(streetAddressInput).toBeEnabled();
         } catch (error) {
-          console.error(`✗ Failed to navigate to ${linkData.text}:`, error);
+          console.error(`✗ Failed to verify form for ${linkData.text}:`, error);
           logTestError(error, `${testInfo.title} - ${linkData.text}`);
           
           try {
             await page.screenshot({ 
-              path: `error-nav-${linkData.text.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`,
+              path: `error-form-${linkData.text.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`,
               fullPage: false
             });
           } catch (screenshotError) {

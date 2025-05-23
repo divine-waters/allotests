@@ -125,7 +125,7 @@ test.describe('Service Locations Modal', () => {
       // Verify URL structure
       const url = new URL(href!);
       expect(url.protocol).toBe('https:');
-      expect(url.hostname).toContain('allo.com');
+      expect(url.hostname).toContain('customer.allofiber.com');
       expect(url.pathname).toContain('get-allo');
     }
   });
