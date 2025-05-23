@@ -5,9 +5,22 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+
 jobs:
   test:
-    timeout-minutes: 10  # Increased timeout for multiple browsers
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        # For home spec, we want all three browsers
+        browser: [chromium, firefox, webkit]
+        # Only run home spec in all browsers, other tests just in chromium
+        include:
+          - browser: chromium
+            test_suite: all
+          - browser: firefox
+            test_suite: home
+          - browser: webkit
+            test_suite: home
     runs-on: ubuntu-latest
 
     steps:
@@ -31,27 +44,29 @@ jobs:
       with:
         path: ~/.cache/ms-playwright
         # Cache key for all browsers
-        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-all-browsers
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-${{ matrix.browser }}
 
     - name: Install dependencies
       run: npm ci
 
     - name: Install Playwright Browsers
-      run: npx playwright install --with-deps chromium firefox webkit
+      run: npx playwright install --with-deps ${{ matrix.browser }}
 
     - name: Run Playwright tests
       run: |
-        # Run home spec with 3 workers in parallel
-        npx playwright test --workers=3 --grep "Signup Links Verification"
-        
-        # Run all other tests with default workers
-        npx playwright test --workers=1 --grep-invert "Signup Links Verification"
+        if [ "${{ matrix.test_suite }}" = "home" ]; then
+          # Run only home spec with 3 workers in the current browser
+          npx playwright test --workers=3 --grep "Signup Links Verification" --project=${{ matrix.browser }}
+        else
+          # Run all other tests with 1 worker in Chromium
+          npx playwright test --workers=1 --grep-invert "Signup Links Verification" --project=chromium
+        fi
 
     - name: Upload Playwright Report
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: playwright-report-${{ github.run_id }}
+        name: playwright-report-${{ matrix.browser }}-${{ github.run_id }}
         path: playwright-report/
         retention-days: 7
 
@@ -59,7 +74,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs-${{ github.run_id }}
+        name: test-logs-${{ matrix.browser }}-${{ github.run_id }}
         path: test-logs/
         retention-days: 7
         if-no-files-found: warn
@@ -68,7 +83,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-screenshots-${{ github.run_id }}
+        name: test-screenshots-${{ matrix.browser }}-${{ github.run_id }}
         path: "*.png"
         retention-days: 7
         if-no-files-found: warn
@@ -93,10 +108,13 @@ jobs:
         echo "Commit: ${{ github.sha }}" >> combined-artifacts/README.md
         echo "" >> combined-artifacts/README.md
         echo "Test Configuration:" >> combined-artifacts/README.md
-        echo "- Home Spec (Signup Links Verification): 3 workers in parallel" >> combined-artifacts/README.md
-        echo "- Other Specs: 1 worker" >> combined-artifacts/README.md
-        echo "- Browsers: Chromium, Firefox, WebKit" >> combined-artifacts/README.md
-        echo "- Test Selection: Using grep patterns" >> combined-artifacts/README.md
+        echo "- Browser: ${{ matrix.browser }}" >> combined-artifacts/README.md
+        echo "- Test Suite: ${{ matrix.test_suite }}" >> combined-artifacts/README.md
+        if [ "${{ matrix.test_suite }}" = "home" ]; then
+          echo "- Workers: 3 (Home Spec)" >> combined-artifacts/README.md
+        else
+          echo "- Workers: 1 (All Other Tests)" >> combined-artifacts/README.md
+        fi
         echo "" >> combined-artifacts/README.md
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
@@ -107,6 +125,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ github.run_id }}
+        name: test-results-${{ matrix.browser }}-${{ github.run_id }}
         path: combined-artifacts/
         retention-days: 7
