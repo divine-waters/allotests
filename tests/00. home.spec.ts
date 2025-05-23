@@ -13,7 +13,65 @@ function getRandomItems<T>(array: T[], count: number): T[] {
   return shuffled.slice(0, count);
 }
 
-test('should verify random signup links in the modal', async ({ page }) => {
+// Helper function to test a single link
+async function testSignupLink(page: any, link: any, index: number, total: number) {
+  // Get link details before clicking
+  const href = await link.getAttribute('href');
+  const text = await link.textContent();
+  console.log(`Testing link ${index + 1}/${total}: ${text} (${href})`);
+  
+  try {
+    // Open modal
+    const signUpButton = page.getByRole('link', { name: 'Sign Up For Service' }).first();
+    await signUpButton.waitFor({ state: 'visible' });
+    await page.evaluate(() => {
+      const $ = window.jQuery;
+      $('#service-locations').modal('show');
+    });
+    
+    // Wait for modal and animation
+    const modal = page.locator('#service-locations');
+    await modal.waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForTimeout(500); // Reduced timeout
+    
+    // Click the specific link
+    await link.waitFor({ state: 'visible', timeout: 10000 });
+    await link.click({ timeout: 10000 });
+    
+    // Wait for navigation and verify URL
+    await page.waitForURL(url => url.toString().startsWith('https://customer.allofiber.com/get-allo/step1'), { timeout: 10000 });
+    const currentUrl = new URL(page.url());
+    const expectedUrl = new URL(href!);
+    
+    // Verify base URL and pathname match
+    expect(currentUrl.origin + currentUrl.pathname).toBe(expectedUrl.origin + expectedUrl.pathname);
+    
+    // Verify required query parameters are present
+    const requiredParams = ['market', 'serviceAddressType', 'locale'];
+    for (const param of requiredParams) {
+      expect(currentUrl.searchParams.has(param)).toBeTruthy();
+    }
+    
+    // Verify the street address combobox is present and visible
+    const streetAddressInput = page.getByRole('combobox', { name: 'Street Address' });
+    await streetAddressInput.waitFor({ state: 'visible', timeout: 10000 });
+    console.log(`✓ Successfully navigated to ${text} and found address input`);
+    
+  } catch (error) {
+    console.error(`✗ Failed to test ${text}:`, error);
+    // Take screenshot on failure
+    await page.screenshot({ 
+      path: `error-${text?.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`,
+      fullPage: true 
+    });
+    throw error; // Re-throw to fail the test
+  }
+}
+
+// Get the links once and share between tests
+let selectedLinks: any[] = [];
+
+test.beforeAll(async ({ page }) => {
   // Navigate and wait for initial load
   await page.goto('https://www.allocommunications.com/');
   await expect(page).toHaveTitle(/ALLO Fiber/);
@@ -27,62 +85,19 @@ test('should verify random signup links in the modal', async ({ page }) => {
   console.log(`Found ${allCityLinks.length} total city links`);
   
   // Select 10 random links
-  const selectedLinks = getRandomItems(allCityLinks, 10);
-  console.log(`Testing 10 randomly selected links`);
-  
-  // Test each selected link
-  for (const [index, link] of selectedLinks.entries()) {
-    // Go back to home page for each iteration
+  selectedLinks = getRandomItems(allCityLinks, 10);
+  console.log(`Selected 10 random links for testing`);
+});
+
+// Test each link in its own test
+for (let i = 0; i < selectedLinks.length; i++) {
+  test(`should verify signup link ${i + 1}`, async ({ page }) => {
+    test.setTimeout(60000); // Set timeout to 60 seconds for each test
+    
+    // Go back to home page
     await page.goto('https://www.allocommunications.com/');
     
-    // Get link details before clicking
-    const href = await link.getAttribute('href');
-    const text = await link.textContent();
-    console.log(`Testing link ${index + 1}/10: ${text} (${href})`);
-    
-    try {
-      // Open modal
-      const signUpButton = page.getByRole('link', { name: 'Sign Up For Service' }).first();
-      await signUpButton.waitFor({ state: 'visible' });
-      await page.evaluate(() => {
-        const $ = window.jQuery;
-        $('#service-locations').modal('show');
-      });
-      
-      // Wait for modal and animation
-      await modal.waitFor({ state: 'visible', timeout: 10000 });
-      await page.waitForTimeout(1000);
-      
-      // Click the specific link
-      await link.waitFor({ state: 'visible', timeout: 10000 });
-      await link.click({ timeout: 10000 });
-      
-      // Wait for navigation and verify URL
-      await page.waitForURL(url => url.toString().startsWith('https://customer.allofiber.com/get-allo/step1'), { timeout: 10000 });
-      const currentUrl = new URL(page.url());
-      const expectedUrl = new URL(href!);
-      
-      // Verify base URL and pathname match
-      expect(currentUrl.origin + currentUrl.pathname).toBe(expectedUrl.origin + expectedUrl.pathname);
-      
-      // Verify required query parameters are present
-      const requiredParams = ['market', 'serviceAddressType', 'locale'];
-      for (const param of requiredParams) {
-        expect(currentUrl.searchParams.has(param)).toBeTruthy();
-      }
-      
-      // Verify the street address combobox is present and visible
-      const streetAddressInput = page.getByRole('combobox', { name: 'Street Address' });
-      await streetAddressInput.waitFor({ state: 'visible', timeout: 10000 });
-      console.log(`✓ Successfully navigated to ${text} and found address input`);
-      
-    } catch (error) {
-      console.error(`✗ Failed to test ${text}:`, error);
-      // Take screenshot on failure
-      await page.screenshot({ 
-        path: `error-${text?.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`,
-        fullPage: true 
-      });
-    }
-  }
-});
+    // Test the link
+    await testSignupLink(page, selectedLinks[i], i, selectedLinks.length);
+  });
+}
