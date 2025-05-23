@@ -3,7 +3,9 @@
   "name": "allotests",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "debug": "playwright test --debug"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
