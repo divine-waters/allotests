@@ -42,10 +42,10 @@ jobs:
     - name: Run Playwright tests
       run: |
         # Run home spec with 3 workers in parallel
-        npx playwright test "tests/00\.home\.spec\.ts" --workers=3
+        npx playwright test --workers=3 --grep "Signup Links Verification"
         
         # Run all other tests with default workers
-        npx playwright test --workers=1 --ignore="tests/00\.home\.spec\.ts"
+        npx playwright test --workers=1 --grep-invert "Signup Links Verification"
 
     - name: Upload Playwright Report
       if: always()
@@ -93,9 +93,10 @@ jobs:
         echo "Commit: ${{ github.sha }}" >> combined-artifacts/README.md
         echo "" >> combined-artifacts/README.md
         echo "Test Configuration:" >> combined-artifacts/README.md
-        echo "- Home Spec: 3 workers in parallel" >> combined-artifacts/README.md
+        echo "- Home Spec (Signup Links Verification): 3 workers in parallel" >> combined-artifacts/README.md
         echo "- Other Specs: 1 worker" >> combined-artifacts/README.md
         echo "- Browsers: Chromium, Firefox, WebKit" >> combined-artifacts/README.md
+        echo "- Test Selection: Using grep patterns" >> combined-artifacts/README.md
         echo "" >> combined-artifacts/README.md
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
