@@ -1,0 +1,399 @@
+{
+  "testRunId": "3d416687-d3d7-4d1a-9a98-2290774a803d",
+  "browser": "firefox-desktop",
+  "timestamp": "2025-05-23T22:22:05.727Z",
+  "summary": {
+    "totalErrors": 5,
+    "totalWarnings": 23,
+    "totalUnhandled": 0,
+    "testRuns": [
+      "3d416687-d3d7-4d1a-9a98-2290774a803d"
+    ]
+  },
+  "logs": {
+    "errors": [
+      {
+        "timestamp": "2025-05-23T22:21:58.670Z",
+        "type": "ERROR",
+        "message": "[JavaScript Error: \"Cookie “_fbp” has been rejected for invalid domain.\" {file: \"https://www.allocommunications.com/\" line: 0}]",
+        "location": {
+          "url": "https://www.allocommunications.com/",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.832Z",
+        "type": "ERROR",
+        "message": "[JavaScript Error: \"downloadable font: download failed (font-family: \"Roboto\" style:normal weight:400 stretch:100 src index:0): status=2152398850 source: https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu4mxK.woff2\"]",
+        "location": {
+          "url": "",
+          "lineNumber": 0,
+          "columnNumber": 1525
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:22:04.842Z",
+        "type": "ERROR",
+        "message": "Error",
+        "location": {
+          "url": "https://customer.allofiber.com/main.b3d6966a0b47dc6b107a.esm.js",
+          "lineNumber": 0,
+          "columnNumber": 56620
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:22:04.842Z",
+        "type": "ERROR",
+        "message": "Error",
+        "location": {
+          "url": "https://customer.allofiber.com/vendor.be55bb0bf27d32393097.esm.js",
+          "lineNumber": 204,
+          "columnNumber": 1127903
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:22:04.866Z",
+        "type": "ERROR",
+        "message": "[JavaScript Error: \"downloadable font: download failed (font-family: \"Roboto\" style:normal weight:400 stretch:100 src index:0): status=2152398850 source: https://fonts.gstatic.com/s/roboto/v47/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbVmUiAo.woff2\"]",
+        "location": {
+          "url": "",
+          "lineNumber": 81,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city"
+        ]
+      }
+    ],
+    "warnings": [
+      {
+        "timestamp": "2025-05-23T22:21:58.292Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Layout was forced before the page was fully loaded. If stylesheets are not yet loaded this may cause a flash of unstyled content.\" {file: \"debugger eval code line 6169 > eval\" line: 805}]",
+        "location": {
+          "url": "debugger eval code line 6169 > eval",
+          "lineNumber": 805,
+          "columnNumber": 42
+        },
+        "count": 2,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup",
+          "should have correct URL parameters for each city"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.639Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Couldn’t process unknown directive ‘require-trusted-types-for’\" {file: \"https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.678Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Couldn’t process unknown directive ‘require-trusted-types-for’\" {file: \"https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.678Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.678Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “https:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.678Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “http:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.680Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: nonce-source or hash-source specified\" {file: \"https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/TVBjMU8YG3o?si=XbsgvToLsNmtAusF",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.837Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Loading failed for the <script> with source “https://www.youtube.com/s/player/59b252b9/player_ias.vflset/en_US/base.js”.\" {file: \"https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs\" line: 10}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs",
+          "lineNumber": 10,
+          "columnNumber": 1314
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.850Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.850Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “https:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.850Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “http:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.850Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: nonce-source or hash-source specified\" {file: \"https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG&co=aHR0cHM6Ly93d3cuYWxsb2NvbW11bmljYXRpb25zLmNvbTo0NDM.&hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&size=normal&cb=939mrak0uwhy",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.945Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.945Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “https:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.945Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “http:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.946Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: nonce-source or hash-source specified\" {file: \"https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com\" line: 0}]",
+        "location": {
+          "url": "https://www.youtube.com/embed/i38E2Y5jGts?si=mhI7jld-trXTZ2cs&enablejsapi=1&origin=https%3A%2F%2Fwww.allocommunications.com",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:58.992Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Ignoring unsupported entryTypes: longtask.\" {file: \"https://www.gstatic.com/recaptcha/releases/jt8Oh2-Ue1u7nEbJQUIdocyd/recaptcha__en.js\" line: 395}]",
+        "location": {
+          "url": "https://www.gstatic.com/recaptcha/releases/jt8Oh2-Ue1u7nEbJQUIdocyd/recaptcha__en.js",
+          "lineNumber": 395,
+          "columnNumber": 475
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:59.436Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:59.436Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “https:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:59.437Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “http:” within script-src: ‘strict-dynamic’ specified\" {file: \"https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:21:59.437Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"Content-Security-Policy: Ignoring “'unsafe-inline'” within script-src: nonce-source or hash-source specified\" {file: \"https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG\" line: 0}]",
+        "location": {
+          "url": "https://www.google.com/recaptcha/api2/bframe?hl=en&v=jt8Oh2-Ue1u7nEbJQUIdocyd&k=6LdQJEYpAAAAAEq-I55DzDc4VhyHSel2NXzSvQjG",
+          "lineNumber": 0,
+          "columnNumber": 1
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      },
+      {
+        "timestamp": "2025-05-23T22:22:00.099Z",
+        "type": "WARNING",
+        "message": "[JavaScript Warning: \"InstallTrigger is deprecated and will be removed in the future.\" {file: \"https://static.olark.com/jsclient-bucket4/application2.js?v=1746026285880\" line: 31}]",
+        "location": {
+          "url": "https://static.olark.com/jsclient-bucket4/application2.js?v=1746026285880",
+          "lineNumber": 31,
+          "columnNumber": 6404
+        },
+        "count": 1,
+        "testNames": [
+          "should have correct URL parameters for each city - Setup"
+        ]
+      }
+    ],
+    "unhandled": []
+  }
+}

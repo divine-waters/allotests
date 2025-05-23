@@ -41,15 +41,15 @@ jobs:
           - test_suite: home-url
             browser: chromium
             workers: 3
-            test_file: url-validation.spec.ts
+            test_file: 03-url-validation.spec.ts
           - test_suite: home-url
             browser: firefox
             workers: 3
-            test_file: url-validation.spec.ts
+            test_file: 03-url-validation.spec.ts
           - test_suite: home-url
             browser: webkit
             workers: 3
-            test_file: url-validation.spec.ts
+            test_file: 03-url-validation.spec.ts
           - test_suite: home-form
             browser: chromium
             workers: 3

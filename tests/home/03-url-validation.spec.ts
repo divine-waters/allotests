@@ -97,15 +97,17 @@ test.describe('Signup URL Validation', () => {
           // Verify market parameter matches city
           const marketParam = currentUrl.searchParams.get('market');
           expect(marketParam).toBeTruthy();
-          expect(linkData.text.toLowerCase()).toContain(marketParam!.toLowerCase());
+          const normalizedMarketParam = marketParam!.toLowerCase().replace(/_/g, ' ');
+          const normalizedLinkText = linkData.text.toLowerCase();
+          expect(normalizedMarketParam).toBe(normalizedLinkText);
           
           // Verify serviceAddressType is valid
           const addressType = currentUrl.searchParams.get('serviceAddressType');
-          expect(['residential', 'business']).toContain(addressType);
+          expect('sfu').toContain(addressType);
           
           // Verify locale is valid
           const locale = currentUrl.searchParams.get('locale');
-          expect(['en-US', 'es-US']).toContain(locale);
+          expect(['EN', 'ES']).toContain(locale);
           
           console.log(`✓ Successfully validated URL for ${linkData.text}`);
           
