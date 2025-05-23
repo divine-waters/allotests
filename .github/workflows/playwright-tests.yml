@@ -42,10 +42,10 @@ jobs:
     - name: Run Playwright tests
       run: |
         # Run home spec with 3 workers in parallel
-        npx playwright test tests/00.home.spec.ts --workers=3
+        npx playwright test "tests/00\.home\.spec\.ts" --workers=3
         
         # Run all other tests with default workers
-        npx playwright test --workers=1 --ignore=tests/00.home.spec.ts
+        npx playwright test --workers=1 --ignore="tests/00\.home\.spec\.ts"
 
     - name: Upload Playwright Report
       if: always()
