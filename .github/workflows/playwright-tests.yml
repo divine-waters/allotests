@@ -51,3 +51,53 @@ jobs:
         name: playwright-report-chromium-${{ github.run_id }}
         path: playwright-report/
         retention-days: 7  # Keep reports for 7 days
+
+    - name: Upload Test Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-logs-chromium-${{ github.run_id }}
+        path: test-logs/
+        retention-days: 7
+        if-no-files-found: warn  # Warn if no logs are found
+
+    - name: Upload Error Screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: error-screenshots-chromium-${{ github.run_id }}
+        path: error-*.png
+        retention-days: 7
+        if-no-files-found: warn  # Warn if no screenshots are found
+
+    - name: Create Combined Artifact
+      if: always()
+      run: |
+        # Create a directory for combined artifacts
+        mkdir -p combined-artifacts
+        
+        # Copy all artifacts into the combined directory
+        cp -r playwright-report/* combined-artifacts/ || true
+        cp -r test-logs/* combined-artifacts/ || true
+        cp error-*.png combined-artifacts/ || true
+        
+        # Create a summary file
+        echo "Test Run Summary" > combined-artifacts/README.md
+        echo "===============" >> combined-artifacts/README.md
+        echo "" >> combined-artifacts/README.md
+        echo "Run ID: ${{ github.run_id }}" >> combined-artifacts/README.md
+        echo "Branch: ${{ github.ref }}" >> combined-artifacts/README.md
+        echo "Commit: ${{ github.sha }}" >> combined-artifacts/README.md
+        echo "" >> combined-artifacts/README.md
+        echo "Contents:" >> combined-artifacts/README.md
+        echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
+        echo "- Test Logs: test-logs/*.json" >> combined-artifacts/README.md
+        echo "- Error Screenshots: error-*.png" >> combined-artifacts/README.md
+
+    - name: Upload Combined Artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-chromium-${{ github.run_id }}
+        path: combined-artifacts/
+        retention-days: 7
