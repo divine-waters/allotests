@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 jobs:
   test:
-    timeout-minutes: 5
+    timeout-minutes: 10  # Increased timeout for multiple browsers
     runs-on: ubuntu-latest
 
     steps:
@@ -30,42 +30,45 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
-        # Cache key specific to OS, Playwright version, and Chromium
-        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-chromium
+        # Cache key for all browsers
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-all-browsers
 
     - name: Install dependencies
       run: npm ci
 
     - name: Install Playwright Browsers
-      # Install only Chromium browsers for faster setup
-      run: npx playwright install --with-deps chromium
+      run: npx playwright install --with-deps chromium firefox webkit
 
     - name: Run Playwright tests
-      # Run tests only for the chromium project
-      run: npx playwright test --workers=1 --project=chromium
+      run: |
+        # Run home spec with 3 workers in parallel
+        npx playwright test tests/00.home.spec.ts --workers=3
+        
+        # Run all other tests with default workers
+        npx playwright test --workers=1 --ignore=tests/00.home.spec.ts
 
-    - name: Upload Playwright Report (chromium)
+    - name: Upload Playwright Report
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: playwright-report-chromium-${{ github.run_id }}
+        name: playwright-report-${{ github.run_id }}
         path: playwright-report/
-        retention-days: 7  # Keep reports for 7 days
+        retention-days: 7
 
     - name: Upload Test Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs-chromium-${{ github.run_id }}
+        name: test-logs-${{ github.run_id }}
         path: test-logs/
         retention-days: 7
-        if-no-files-found: warn  # Warn if no logs are found
+        if-no-files-found: warn
 
-    - name: Upload Error Screenshots
+    - name: Upload Test Screenshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-screenshots-chromium-${{ github.run_id }}
+        name: test-screenshots-${{ github.run_id }}
         path: "*.png"
         retention-days: 7
         if-no-files-found: warn
@@ -89,6 +92,11 @@ jobs:
         echo "Branch: ${{ github.ref }}" >> combined-artifacts/README.md
         echo "Commit: ${{ github.sha }}" >> combined-artifacts/README.md
         echo "" >> combined-artifacts/README.md
+        echo "Test Configuration:" >> combined-artifacts/README.md
+        echo "- Home Spec: 3 workers in parallel" >> combined-artifacts/README.md
+        echo "- Other Specs: 1 worker" >> combined-artifacts/README.md
+        echo "- Browsers: Chromium, Firefox, WebKit" >> combined-artifacts/README.md
+        echo "" >> combined-artifacts/README.md
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
         echo "- Test Logs: test-logs/*.json" >> combined-artifacts/README.md
@@ -98,6 +106,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-chromium-${{ github.run_id }}
+        name: test-results-${{ github.run_id }}
         path: combined-artifacts/
         retention-days: 7
