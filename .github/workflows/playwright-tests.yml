@@ -97,23 +97,29 @@ jobs:
         # Use the safe name provided by the matrix
         SAFE_NAME="${{ matrix.safe_name }}"
         export SAFE_NAME # Export the variable
+        # Ensure the output directory exists before writing the README
+        PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
+        mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
         # Create a summary file within the output directory
-        echo "Test Run Summary" > test-results-$SAFE_NAME/README.md
-        echo "===============" >> test-results-$SAFE_NAME/README.md
-        echo "" >> test-results-$SAFE_NAME/README.md
-        echo "Run ID: ${{ github.run_id }}" >> test-results-$SAFE_NAME/README.md
-        echo "Branch: ${{ github.ref }}" >> test-results-$SAFE_NAME/README.md
-        echo "Commit: ${{ github.sha }}" >> test-results-$SAFE_NAME/README.md
-        echo "" >> test-results-$SAFE_NAME/README.md
-        echo "Test Configuration:" >> test-results-$SAFE_NAME/README.md
-        echo "- Browser: Chromium" >> test-results-$SAFE_NAME/README.md
-        echo "- Workers: 1" >> test-results-$SAFE_NAME/README.md
-        echo "- Test File: ${{ matrix.path }}" >> test-results-$SAFE_NAME/README.md
-        echo "- Artifact Safe Name: $SAFE_NAME" >> test-results-$SAFE_NAME/README.md
-        echo "" >> test-results-$SAFE_NAME/README.md
-        echo "Contents:" >> test-results-$SAFE_NAME/README.md
-        echo "- Playwright HTML Report: index.html (if generated in config)" >> test-results-$SAFE_NAME/README.md
-        echo "- Test Results (including logs and screenshots): Contents of this directory" >> test-results-$SAFE_NAME/README.md
+        touch "$PLAYWRIGHT_OUTPUT_DIR/README.md"
+        
+        printf "%s\n" \
+          "Test Run Summary" \
+          "===============" \
+          "" \
+          "Run ID: ${{ github.run_id }}" \
+          "Branch: ${{ github.ref }}" \
+          "Commit: ${{ github.sha }}" \
+          "" \
+          "Test Configuration:" \
+          "- Browser: Chromium" \
+          "- Workers: 1" \
+          "- Test File: ${{ matrix.path }}" \
+          "- Artifact Safe Name: $SAFE_NAME" \
+          "" \
+          "Contents:" \
+          "- Playwright HTML Report: index.html (if generated in config)" \
+          "- Test Results (including logs and screenshots): Contents of this directory" > "$PLAYWRIGHT_OUTPUT_DIR/README.md"
 
     - name: Generate safe artifact name
       id: generate_safe_name
