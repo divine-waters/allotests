@@ -1,5 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Get the target spec file from the environment variable, if set
+const targetSpecFile = process.env.TARGET_SPEC_FILE;
+
+// Function to escape a string for use in a regex
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|\\[\\]\\\\]/g, '\\$&'); // $& means the whole matched string
+}
+
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -11,6 +19,8 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
+
+const baseTestIgnore = [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/];
 
 export default defineConfig({
   testDir: './tests',
@@ -56,43 +66,44 @@ export default defineConfig({
     // Regular test projects - run in parallel across all browsers
     {
       name: 'chromium',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
+      testIgnore: baseTestIgnore,
       use: { ...devices['Desktop Chrome'] },
     },
 
     {
       name: 'firefox',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
       use: { ...devices['Desktop Firefox'] },
     },
 
     {
       name: 'webkit',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
       use: { ...devices['Desktop Safari'] },
     },
 
     {
       name: 'Mobile Chrome',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
       use: { ...devices['Pixel 5'] },
     },
 
     {
       name: 'Mobile Safari',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
       use: { ...devices['iPhone 12'] },
     },
 
     {
       name: 'Microsoft Edge',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
       use: { ...devices['Desktop Edge'], channel: 'msedge' },
     },
 
     {
       name: 'Google Chrome',
-      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
   ],
