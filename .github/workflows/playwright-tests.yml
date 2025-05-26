@@ -7,8 +7,29 @@ on:
     branches: [ main ]
 
 jobs:
+  find_tests:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list_files.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find test files
+        id: list_files
+        run: |
+          find tests -name '*.spec.ts' | while read file; do
+            SAFE_NAME=$(echo "$file" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+            echo "{\"path\": \"$file\", \"safe_name\": \"$SAFE_NAME\"}";
+          done | jq -s .
+
   test:
+    needs: [find_tests]
     timeout-minutes: 10
+    strategy:
+      matrix:
+        include: ${{ needs.find_tests.outputs.matrix }}
     runs-on: ubuntu-latest
 
     steps:
@@ -42,66 +63,39 @@ jobs:
 
     - name: Run Playwright tests
       run: |
-        npx playwright test --workers=1 --project=chromium
-
-    - name: Upload Playwright Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: playwright-report-${{ github.run_id }}
-        path: playwright-report/
-        retention-days: 7
-
-    - name: Upload Test Logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: browser-console-logs-${{ github.run_id }}
-        path: browser-console-logs/
-        retention-days: 7
-        if-no-files-found: warn
-
-    - name: Upload Test Screenshots
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-screenshots-${{ github.run_id }}
-        path: "*.png"
-        retention-days: 7
-        if-no-files-found: warn
+        # Configure Playwright to output results into a directory named after the safe test name
+        PLAYWRIGHT_OUTPUT_DIR="test-results-${{ matrix.safe_name }}"
+        mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
+        npx playwright test ${{ matrix.path }} --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
+        # Optionally, generate HTML report directly into the output directory
+        # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
 
     - name: Create Combined Artifact
       if: always()
       run: |
-        # Create a directory for combined artifacts
-        mkdir -p combined-artifacts
-        
-        # Copy all artifacts into the combined directory
-        cp -r playwright-report/* combined-artifacts/ || true
-        cp -r browser-console-logs/* combined-artifacts/ || true
-        cp *.png combined-artifacts/ || true
-        
-        # Create a summary file
-        echo "Test Run Summary" > combined-artifacts/README.md
-        echo "===============" >> combined-artifacts/README.md
-        echo "" >> combined-artifacts/README.md
-        echo "Run ID: ${{ github.run_id }}" >> combined-artifacts/README.md
-        echo "Branch: ${{ github.ref }}" >> combined-artifacts/README.md
-        echo "Commit: ${{ github.sha }}" >> combined-artifacts/README.md
-        echo "" >> combined-artifacts/README.md
-        echo "Test Configuration:" >> combined-artifacts/README.md
-        echo "- Browser: Chromium" >> combined-artifacts/README.md
-        echo "- Workers: 1" >> combined-artifacts/README.md
-        echo "" >> combined-artifacts/README.md
-        echo "Contents:" >> combined-artifacts/README.md
-        echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
-        echo "- Test Logs: browser-console-logs/*.json" >> combined-artifacts/README.md
-        echo "- Test Screenshots: *.png" >> combined-artifacts/README.md
+        # The combined artifact is the Playwright output directory itself
+        # Create a summary file within the output directory
+        echo "Test Run Summary" > test-results-${{ matrix.safe_name }}/README.md
+        echo "===============" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "Run ID: ${{ github.run_id }}" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "Branch: ${{ github.ref }}" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "Commit: ${{ github.sha }}" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "Test Configuration:" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "- Browser: Chromium" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "- Workers: 1" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "- Test File: ${{ matrix.path }}" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "- Artifact Safe Name: ${{ matrix.safe_name }}" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "Contents:" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "- Playwright HTML Report: index.html (if generated in config)" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "- Test Results (including logs and screenshots): Contents of this directory" >> test-results-${{ matrix.safe_name }}/README.md
 
     - name: Upload Combined Artifact
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ github.run_id }}
-        path: combined-artifacts/
+        name: test-results-${{ matrix.safe_name }}-${{ github.run_id }}
+        path: test-results-${{ matrix.safe_name }}/
         retention-days: 7
