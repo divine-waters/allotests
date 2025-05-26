@@ -19,20 +19,25 @@ jobs:
       - name: Find test files
         id: list_files
         run: |
-          # Find all spec files, format as a JSON array of paths, and set as output
-          TEST_FILES=$(find tests -name '*.spec.ts' | jq -R . | jq -s .)
+          # Find all spec files, create a safe name, format as a JSON array of objects for the matrix, and set as output
+          MATRIX_DATA=$(find tests -name '*.spec.ts' | while read file; do
+            # Generate a safe name by replacing non-alphanumeric/underscore/dash/dot chars with underscore and removing .spec.ts
+            SAFE_NAME=$(echo "$file" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+            # Output JSON object for each file with path and safe_name
+            echo "{\"path\": \"$file\", \"safe_name\": \"$SAFE_NAME\"}";
+          done | jq -s . -c)
           
           # Set the output for the matrix using a multi-line string format
           echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$TEST_FILES" >> "$GITHUB_OUTPUT"
+          # Output the JSON array wrapped in an 'include' object
+          echo "{\"include\": $MATRIX_DATA}" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
   test:
     needs: [find_tests]
     timeout-minutes: 10
     strategy:
-      matrix:
-        test_file: ${{ needs.find_tests.outputs.matrix }}
+      matrix: ${{ fromJson(needs.find_tests.outputs.matrix) }}
     runs-on: ubuntu-latest
 
     steps:
