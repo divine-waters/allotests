@@ -33,11 +33,14 @@ interface BrowserLogs {
   errors: LogEntry[];
   warnings: LogEntry[];
   unhandled: LogEntry[];
-  testRuns: Set<string>;  // Track which test runs contributed to these logs
+  testRuns: string[];  // Changed from Set to array
 }
 
 // Map to store logs for each browser type (not per worker)
 const browserLogs = new Map<string, BrowserLogs>();
+
+// Add type for lock release function
+type LockRelease = () => Promise<void>;
 
 // Helper to get browser identifier (just browser type, not per worker)
 function getBrowserId(page: Page): string {
@@ -198,124 +201,150 @@ function mergeDuplicateLogs(logs: LogEntry[]): LogEntry[] {
   return Array.from(mergedMap.values());
 }
 
+// Helper to ensure directory exists with proper permissions
+async function ensureDirectoryExists(dirPath: string): Promise<void> {
+  try {
+    // Check if directory exists
+    if (!fs.existsSync(dirPath)) {
+      // Create directory and all parent directories
+      await fs.promises.mkdir(dirPath, { 
+        recursive: true,
+        mode: 0o755 // rwxr-xr-x permissions
+      });
+      console.log(`Created directory at ${dirPath}`);
+    } else {
+      // Ensure directory has correct permissions
+      await fs.promises.chmod(dirPath, 0o755);
+    }
+  } catch (error) {
+    console.error(`Failed to create/update directory at ${dirPath}:`, error);
+    throw error; // Re-throw to handle in caller
+  }
+}
+
 // Helper to write logs to file with locking
 async function writeLogsToFile(): Promise<void> {
   const timestamp = new Date().toISOString();
   const logDir = path.join(process.cwd(), 'browser-console-logs');
   
-  // Create logs directory if it doesn't exist
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
+  try {
+    // Ensure logs directory exists with proper permissions
+    await ensureDirectoryExists(logDir);
+  } catch (error) {
+    console.error('Failed to create logs directory:', error);
+    if (!fs.existsSync(logDir)) {
+      throw new Error(`Cannot proceed without logs directory: ${error.message}`);
+    }
   }
 
   // Write one file per browser type
   for (const [browserId, logs] of browserLogs.entries()) {
     const logFile = path.join(logDir, `browser-console-logs-${browserId}.json`);
-    
-    // Initialize empty log file if it doesn't exist
-    if (!fs.existsSync(logFile)) {
-      const initialContent = {
-        testRunId: TEST_RUN_ID,
-        browser: browserId,
-        timestamp,
-        summary: {
-          totalErrors: 0,
-          totalWarnings: 0,
-          totalUnhandled: 0,
-          testRuns: []
-        },
-        logs: {
-          errors: [],
-          warnings: [],
-          unhandled: []
-        }
-      };
-      fs.writeFileSync(logFile, JSON.stringify(initialContent, null, 2));
-    }
+    let lockFile: LockRelease | null = null;
     
     try {
-      // Acquire lock before writing
-      await lockfile.lock(logFile, { 
+      // Ensure parent directory exists
+      const logFileDir = path.dirname(logFile);
+      await ensureDirectoryExists(logFileDir);
+
+      // Create empty file if it doesn't exist
+      if (!fs.existsSync(logFile)) {
+        await fs.promises.writeFile(logFile, JSON.stringify(initializeLogs(browserId, timestamp), null, 2), { mode: 0o644 });
+      }
+
+      // Acquire lock with retries
+      lockFile = await lockfile.lock(logFile, { 
         retries: {
           retries: 5,
           factor: 2,
           minTimeout: 1000,
           maxTimeout: 5000
         },
-        stale: 30000 // Consider lock stale after 30 seconds
+        stale: 30000
       });
 
       // Read existing logs
       let existingLogs;
       try {
-        const content = fs.readFileSync(logFile, 'utf8');
+        const content = await fs.promises.readFile(logFile, 'utf8');
         existingLogs = JSON.parse(content);
-        // Convert testRuns array to Set
-        existingLogs.summary.testRuns = new Set(existingLogs.summary.testRuns);
       } catch (e) {
-        console.error(`Error reading log file ${logFile}, creating new log structure:`, e);
-        existingLogs = {
-          testRunId: TEST_RUN_ID,
-          browser: browserId,
-          timestamp,
-          summary: {
-            totalErrors: 0,
-            totalWarnings: 0,
-            totalUnhandled: 0,
-            testRuns: new Set<string>()
-          },
-          logs: {
-            errors: [],
-            warnings: [],
-            unhandled: []
-          }
-        };
+        console.error(`Error reading existing logs for ${browserId}:`, e);
+        existingLogs = initializeLogs(browserId, timestamp);
       }
 
-      // Merge new logs with existing logs
-      existingLogs.summary.testRuns.add(TEST_RUN_ID);
-      existingLogs.logs.errors.push(...logs.errors);
-      existingLogs.logs.warnings.push(...logs.warnings);
-      existingLogs.logs.unhandled.push(...logs.unhandled);
+      // Update timestamp and test runs
+      existingLogs.lastUpdated = timestamp;
+      if (!existingLogs.summary.testRuns.includes(TEST_RUN_ID)) {
+        existingLogs.summary.testRuns.push(TEST_RUN_ID);
+      }
+
+      // Add new logs
+      const newErrors = logs.errors.map(entry => ({
+        ...entry,
+        testRunId: TEST_RUN_ID,
+        timestamp
+      }));
+      const newWarnings = logs.warnings.map(entry => ({
+        ...entry,
+        testRunId: TEST_RUN_ID,
+        timestamp
+      }));
+      const newUnhandled = logs.unhandled.map(entry => ({
+        ...entry,
+        testRunId: TEST_RUN_ID,
+        timestamp
+      }));
+
+      // Merge with existing logs
+      existingLogs.logs.errors.push(...newErrors);
+      existingLogs.logs.warnings.push(...newWarnings);
+      existingLogs.logs.unhandled.push(...newUnhandled);
 
       // Deduplicate and merge logs
       existingLogs.logs.errors = mergeDuplicateLogs(existingLogs.logs.errors);
       existingLogs.logs.warnings = mergeDuplicateLogs(existingLogs.logs.warnings);
       existingLogs.logs.unhandled = mergeDuplicateLogs(existingLogs.logs.unhandled);
 
-      // Update summary with actual counts (including duplicates)
+      // Update summary
       existingLogs.summary.totalErrors = existingLogs.logs.errors.reduce((sum, entry) => sum + (entry.count || 1), 0);
       existingLogs.summary.totalWarnings = existingLogs.logs.warnings.reduce((sum, entry) => sum + (entry.count || 1), 0);
       existingLogs.summary.totalUnhandled = existingLogs.logs.unhandled.reduce((sum, entry) => sum + (entry.count || 1), 0);
 
-      // Sort all logs by timestamp
-      existingLogs.logs.errors.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-      existingLogs.logs.warnings.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-      existingLogs.logs.unhandled.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      // Collect all affected test names
+      const allTestNames = new Set<string>();
+      [...existingLogs.logs.errors, ...existingLogs.logs.warnings, ...existingLogs.logs.unhandled]
+        .forEach(entry => {
+          if (entry.testNames) {
+            entry.testNames.forEach(testName => allTestNames.add(testName));
+          }
+        });
+      existingLogs.summary.affectedTests = Array.from(allTestNames);
 
-      // Convert testRuns Set back to array for JSON serialization
-      const logContent = {
-        ...existingLogs,
-        summary: {
-          ...existingLogs.summary,
-          testRuns: Array.from(existingLogs.summary.testRuns)
-        }
-      };
+      // Sort all logs by timestamp (newest first)
+      existingLogs.logs.errors.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      existingLogs.logs.warnings.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      existingLogs.logs.unhandled.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-      // Write merged logs
-      fs.writeFileSync(logFile, JSON.stringify(logContent, null, 2));
-      console.log(`Logs written to ${logFile}`);
+      // Write consolidated logs
+      await fs.promises.writeFile(
+        logFile,
+        JSON.stringify(existingLogs, null, 2),
+        { mode: 0o644 }
+      );
+      console.log(`Consolidated logs written to ${logFile}`);
 
     } catch (error) {
-      console.error(`Error writing logs to ${logFile}:`, error);
+      console.error(`Error processing logs for ${browserId}:`, error);
+      throw error;
     } finally {
-      // Release lock
-      try {
-        await lockfile.unlock(logFile);
-      } catch (e) {
-        // Ignore ENOENT errors when unlocking as they're not critical
-        if (e.code !== 'ENOENT') {
-          console.error(`Error releasing lock for ${logFile}:`, e);
+      if (lockFile) {
+        try {
+          await lockFile();
+        } catch (e) {
+          if (e.code !== 'ENOENT') {
+            console.error(`Error releasing lock for ${logFile}:`, e);
+          }
         }
       }
     }
@@ -557,12 +586,14 @@ export async function setupConsoleLogging(page: Page, testName?: string): Promis
       errors: [],
       warnings: [],
       unhandled: [],
-      testRuns: new Set()
+      testRuns: []  // Array instead of Set
     });
   }
   
   const logs = browserLogs.get(browserId)!;
-  logs.testRuns.add(TEST_RUN_ID);
+  if (!logs.testRuns.includes(TEST_RUN_ID)) {
+    logs.testRuns.push(TEST_RUN_ID);
+  }
   
   // Clear seen messages when setting up new page
   seenMessages.clear();
@@ -624,11 +655,31 @@ export function logTestError(error: any, testName?: string): void {
       errors: [],
       warnings: [],
       unhandled: [],
-      testRuns: new Set()
+      testRuns: []  // Array instead of Set
     });
   }
   
   const logs = browserLogs.get(browserId)!;
   const errorEntry = formatTestError(error, testName);
   logs.errors.push(errorEntry);
+}
+
+// Update the log initialization
+function initializeLogs(browserId: string, timestamp: string) {
+  return {
+    browser: browserId,
+    lastUpdated: timestamp,
+    summary: {
+      totalErrors: 0,
+      totalWarnings: 0,
+      totalUnhandled: 0,
+      testRuns: [],  // Array instead of Set
+      affectedTests: []  // Array instead of Set
+    },
+    logs: {
+      errors: [],
+      warnings: [],
+      unhandled: []
+    }
+  };
 } 

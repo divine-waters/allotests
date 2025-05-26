@@ -34,48 +34,66 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
+    // Performance tests project - runs sequentially and only in Chromium
+    {
+      name: 'performance',
+      testMatch: /.*\.performance\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+      fullyParallel: false,  // Run tests sequentially
+      workers: 1,  // Use only one worker
+    },
+
+    // Competitor performance tests project - runs sequentially and only in Chromium
+    {
+      name: 'competitor-performance',
+      testMatch: /.*competitor-performance\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+      fullyParallel: false,  // Run tests sequentially
+      workers: 1,  // Use only one worker
+    },
+
+    // Regular test projects - run in parallel across all browsers
     {
       name: 'chromium',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
 
     {
       name: 'firefox',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Firefox'] },
     },
 
     {
       name: 'webkit',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Safari'] },
     },
+
     {
-    name: 'Mobile Chrome',
-    use: { ...devices['Pixel 5'] },
-  },
-  {
-    name: 'Mobile Safari',
-    use: { ...devices['iPhone 12'] },
-  },
+      name: 'Mobile Chrome',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      use: { ...devices['Pixel 5'] },
+    },
 
-    /* Test against mobile viewports. */
-     {
-       name: 'Mobile Chrome',
-       use: { ...devices['Pixel 5'] },
-     },
-     {
-       name: 'Mobile Safari',
-       use: { ...devices['iPhone 12'] },
-     },
+    {
+      name: 'Mobile Safari',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      use: { ...devices['iPhone 12'] },
+    },
 
-    /* Test against branded browsers. */
-     {
-       name: 'Microsoft Edge',
-       use: { ...devices['Desktop Edge'], channel: 'msedge' },
-     },
-     {
-       name: 'Google Chrome',
-       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-     },
+    {
+      name: 'Microsoft Edge',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      use: { ...devices['Desktop Edge'], channel: 'msedge' },
+    },
+
+    {
+      name: 'Google Chrome',
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
+      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+    },
   ],
 
   /* Run your local dev server before starting the tests */

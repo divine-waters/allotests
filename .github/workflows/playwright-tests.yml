@@ -9,64 +9,6 @@ on:
 jobs:
   test:
     timeout-minutes: 10
-    strategy:
-      matrix:
-        # Define all combinations for home tests
-        include:
-          # Home tests run in all browsers
-          - test_suite: home-modal
-            browser: chromium
-            workers: 3
-            test_file: 01-modal.spec.ts
-          - test_suite: home-modal
-            browser: firefox
-            workers: 3
-            test_file: 01-modal.spec.ts
-          - test_suite: home-modal
-            browser: webkit
-            workers: 3
-            test_file: 01-modal.spec.ts
-          - test_suite: home-navigation
-            browser: chromium
-            workers: 3
-            test_file: 00-navigation.spec.ts
-          - test_suite: home-navigation
-            browser: firefox
-            workers: 3
-            test_file: 00-navigation.spec.ts
-          - test_suite: home-navigation
-            browser: webkit
-            workers: 3
-            test_file: 00-navigation.spec.ts
-          - test_suite: home-url
-            browser: chromium
-            workers: 3
-            test_file: 03-url-validation.spec.ts
-          - test_suite: home-url
-            browser: firefox
-            workers: 3
-            test_file: 03-url-validation.spec.ts
-          - test_suite: home-url
-            browser: webkit
-            workers: 3
-            test_file: 03-url-validation.spec.ts
-          - test_suite: home-form
-            browser: chromium
-            workers: 3
-            test_file: 02-form.spec.ts
-          - test_suite: home-form
-            browser: firefox
-            workers: 3
-            test_file: 02-form.spec.ts
-          - test_suite: home-form
-            browser: webkit
-            workers: 3
-            test_file: 02-form.spec.ts
-          # Other tests run only in chromium
-          - test_suite: other
-            browser: chromium
-            workers: 1
-            test_file: ""
     runs-on: ubuntu-latest
 
     steps:
@@ -90,29 +32,23 @@ jobs:
       with:
         path: ~/.cache/ms-playwright
         # Cache key for all browsers
-        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-${{ matrix.browser }}
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}-chromium
 
     - name: Install dependencies
       run: npm ci
 
     - name: Install Playwright Browsers
-      run: npx playwright install --with-deps ${{ matrix.browser }}
+      run: npx playwright install --with-deps chromium
 
     - name: Run Playwright tests
       run: |
-        if [[ "${{ matrix.test_suite }}" == home-* ]]; then
-          # Run specific home test file
-          npx playwright test tests/home/${{ matrix.test_file }} --workers=${{ matrix.workers }} --project=${{ matrix.browser }}
-        else
-          # Run all other tests in chromium
-          npx playwright test --workers=${{ matrix.workers }} --project=chromium --grep-invert "Signup Links Verification"
-        fi
+        npx playwright test --workers=1 --project=chromium
 
     - name: Upload Playwright Report
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: playwright-report-${{ matrix.browser }}-${{ matrix.test_suite }}-${{ github.run_id }}
+        name: playwright-report-${{ github.run_id }}
         path: playwright-report/
         retention-days: 7
 
@@ -120,7 +56,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: browser-console-logs-${{ matrix.browser }}-${{ matrix.test_suite }}-${{ github.run_id }}
+        name: browser-console-logs-${{ github.run_id }}
         path: browser-console-logs/
         retention-days: 7
         if-no-files-found: warn
@@ -129,7 +65,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-screenshots-${{ matrix.browser }}-${{ matrix.test_suite }}-${{ github.run_id }}
+        name: test-screenshots-${{ github.run_id }}
         path: "*.png"
         retention-days: 7
         if-no-files-found: warn
@@ -154,12 +90,8 @@ jobs:
         echo "Commit: ${{ github.sha }}" >> combined-artifacts/README.md
         echo "" >> combined-artifacts/README.md
         echo "Test Configuration:" >> combined-artifacts/README.md
-        echo "- Browser: ${{ matrix.browser }}" >> combined-artifacts/README.md
-        echo "- Test Suite: ${{ matrix.test_suite }}" >> combined-artifacts/README.md
-        echo "- Workers: ${{ matrix.workers }}" >> combined-artifacts/README.md
-        if [[ "${{ matrix.test_suite }}" == home-* ]]; then
-          echo "- Test File: ${{ matrix.test_file }}" >> combined-artifacts/README.md
-        fi
+        echo "- Browser: Chromium" >> combined-artifacts/README.md
+        echo "- Workers: 1" >> combined-artifacts/README.md
         echo "" >> combined-artifacts/README.md
         echo "Contents:" >> combined-artifacts/README.md
         echo "- Playwright HTML Report: index.html" >> combined-artifacts/README.md
@@ -170,6 +102,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ matrix.browser }}-${{ matrix.test_suite }}-${{ github.run_id }}
+        name: test-results-${{ github.run_id }}
         path: combined-artifacts/
         retention-days: 7

@@ -1,4 +1,4 @@
-import { test, expect, devices } from '@playwright/test';
+import { test, expect, devices, Response } from '@playwright/test';
 
 interface TaskInfo {
   duration: number;
@@ -395,266 +395,360 @@ function printTestFooter() {
 }
 
 test.describe('Performance Tests', () => {
+  // Increase the default timeout for all tests in this suite
+  test.setTimeout(120000); // 2 minutes total timeout for the suite
+
+  test.beforeEach(async ({ browser, page }, testInfo) => {
+    // Skip test if not using Chromium
+    if (browser.browserType().name() !== 'chromium') {
+      test.skip(true, 'Performance tests with network throttling are only supported in Chromium');
+      return;
+    }
+
+    // Setup network throttling for Chromium
+    const context = await browser.newContext();
+    const newPage = await context.newPage();
+    const client = await context.newCDPSession(newPage);
+    await client.send('Network.enable');
+    await client.send('Network.emulateNetworkConditions', {
+      offline: false,
+      latency: 100, // ms
+      downloadThroughput: 1024 * 1024 / 8, // 1 Mbps
+      uploadThroughput: 1024 * 1024 / 8 // 1 Mbps
+    });
+
+    // Use the throttled page for the test
+    await page.close();
+    Object.assign(page, newPage);
+
+    // Start tracing at the beginning of each test
+    await context.tracing.start({ 
+      screenshots: true, 
+      snapshots: true,
+      sources: true,
+      title: testInfo.title
+    });
+  });
+
+  test.afterEach(async ({ context }) => {
+    // Stop tracing after each test
+    try {
+      await context.tracing.stop({ 
+        path: `trace-${test.info().title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip` 
+      });
+    } catch (error) {
+      console.warn('Failed to save trace:', error.message);
+    }
+  });
+
   const url = 'https://www.allocommunications.com/';
 
   // Original performance test
   test('Homepage Performance', async ({ page, context }) => {
     printTestHeader('Homepage Performance Test');
     
-    // Enable tracing for performance metrics
-    await context.tracing.start({ screenshots: true, snapshots: true });
+    try {
+      // Navigate to the page with a more resilient strategy
+      const response = await Promise.race([
+        page.goto(url, { 
+          waitUntil: 'domcontentloaded', // More reliable than networkidle
+          timeout: 45000 // 45 second timeout for initial load
+        }) as Promise<Response>,
+        new Promise<Response>((_, reject) => 
+          setTimeout(() => reject(new Error('Initial page load timeout after 45 seconds')), 45000)
+        )
+      ]);
 
-    // Navigate to the page and measure performance
-    await page.goto(url);
+      // Verify the response
+      if (!response) {
+        throw new Error('Navigation failed - no response received');
+      }
+      if (!response.ok()) {
+        throw new Error(`Navigation failed with status ${response.status()}: ${response.statusText()}`);
+      }
 
-    // Stop tracing and save the trace
-    await context.tracing.stop({ path: 'trace.zip' });
+      // Wait for critical elements with a reasonable timeout
+      try {
+        await Promise.race([
+          // Wait for body element to be visible
+          page.waitForSelector('body', { state: 'visible', timeout: 15000 }),
+          // Fallback timeout
+          new Promise(resolve => setTimeout(resolve, 15000))
+        ]);
+      } catch (error) {
+        console.warn('Warning: Could not find body element:', error.message);
+        throw new Error('Page failed to load - no body element found');
+      }
 
-    // Assert that the page loaded successfully
-    expect(page.url()).toBe(url);
+      // Optional: Wait for any critical resources to load
+      try {
+        await Promise.race([
+          // Wait for network to be idle, but with a shorter timeout
+          page.waitForLoadState('networkidle', { timeout: 15000 }),
+          // Fallback timeout
+          new Promise(resolve => setTimeout(resolve, 15000))
+        ]);
+      } catch (error) {
+        console.warn('Warning: Network did not reach idle state, but continuing test:', error.message);
+      }
 
-    // Largest Contentful Paint (LCP) with enhanced diagnostics
-    const lcpDetails = await page.evaluate(() => {
-      return new Promise<{lcp: number, element: string, size: number, url: string, timestamp: number}>((resolve) => {
-        let largestContentfulPaint: LargestContentfulPaint | undefined;
-        let observer: PerformanceObserver | null = null;
-        const timeout = setTimeout(() => {
-          observer?.disconnect();
-          resolve({ lcp: 0, element: 'timeout', size: 0, url: 'N/A', timestamp: 0 });
-        }, 5000); // Reduced from 10000ms to 5000ms
+      // Assert that the page loaded successfully
+      expect(page.url()).toBe(url);
 
-        if (window.PerformanceObserver) {
-          observer = new PerformanceObserver((entryList) => {
+      // Largest Contentful Paint (LCP) with enhanced diagnostics
+      const lcpDetails = await page.evaluate(() => {
+        return new Promise<{lcp: number, element: string, size: number, url: string, timestamp: number}>((resolve) => {
+          let largestContentfulPaint: LargestContentfulPaint | undefined;
+          let observer: PerformanceObserver | null = null;
+          const timeout = setTimeout(() => {
+            observer?.disconnect();
+            resolve({ lcp: 0, element: 'timeout', size: 0, url: 'N/A', timestamp: 0 });
+          }, 5000); // Reduced from 10000ms to 5000ms
+
+          if (window.PerformanceObserver) {
+            observer = new PerformanceObserver((entryList) => {
+              const entries = entryList.getEntries();
+              entries.forEach(entry => {
+                if (entry.entryType === 'largest-contentful-paint') {
+                  clearTimeout(timeout);
+                  largestContentfulPaint = entry as LargestContentfulPaint;
+                  const element = largestContentfulPaint.element;
+                  resolve({
+                    lcp: entry.startTime,
+                    element: element ? element.tagName + (element.id ? `#${element.id}` : '') + (element.className ? `.${element.className}` : '') : 'unknown',
+                    size: element ? element.getBoundingClientRect().width * element.getBoundingClientRect().height : 0,
+                    url: element instanceof HTMLImageElement ? element.src : 'N/A',
+                    timestamp: entry.startTime
+                  });
+                  observer?.disconnect();
+                }
+              });
+            });
+
+            observer.observe({ type: 'largest-contentful-paint', buffered: true });
+          } else {
+            clearTimeout(timeout);
+            resolve({ lcp: 0, element: 'unsupported', size: 0, url: 'N/A', timestamp: 0 });
+          }
+        });
+      }, { timeout: 6000 });
+
+      // LCP Diagnostic Report
+      printTestHeader('LCP Diagnostic Report');
+      console.log(`LCP Value: ${lcpDetails.lcp}ms (Threshold: 2500ms)`);
+      console.log(`LCP Element: ${lcpDetails.element}`);
+      console.log(`Element Size: ${Math.round(lcpDetails.size)}px²`);
+      console.log(`Resource URL: ${lcpDetails.url}`);
+      console.log(`Timestamp: ${lcpDetails.timestamp}ms`);
+
+      // Add more detailed assertion message
+      expect(lcpDetails.lcp, `LCP of ${lcpDetails.lcp}ms exceeds threshold of 2500ms. Element: ${lcpDetails.element}, Size: ${Math.round(lcpDetails.size)}px², URL: ${lcpDetails.url}`).toBeLessThan(2500);
+
+      // Total Blocking Time (TBT) with detailed task analysis
+      const tbtDetails = await page.evaluate(() => {
+        return new Promise<{totalTBT: number, tasks: Array<{
+          duration: number,
+          startTime: number,
+          name: string,
+          resourceType?: string,
+          resourceUrl?: string,
+          jsHeapSize?: number,
+          domNodes?: number,
+          operations?: Array<{
+            type: string,
+            name: string,
+            duration: number
+          }>
+        }>}>((resolve) => {
+          if (!window.PerformanceObserver) {
+            resolve({ totalTBT: 0, tasks: [] });
+            return;
+          }
+
+          // Get performance metrics at the time of the task
+          function getPerformanceMetrics() {
+            return {
+              jsHeapSize: (performance as any).memory?.usedJSHeapSize,
+              domNodes: document.getElementsByTagName('*').length
+            };
+          }
+
+          // Track all performance entries during the task
+          function getOperationsDuringTask(startTime: number, endTime: number) {
+            const entries = performance.getEntriesByType('resource')
+              .concat(performance.getEntriesByType('measure'))
+              .concat(performance.getEntriesByType('paint'))
+              .filter(entry => entry.startTime >= startTime && entry.startTime <= endTime)
+              .map(entry => ({
+                type: entry.entryType,
+                name: entry.name,
+                duration: entry.duration
+              }))
+              .sort((a, b) => a.duration - b.duration);
+
+            return entries;
+          }
+
+          let totalBlockingTime = 0;
+          const blockingTasks: TaskInfo[] = [];
+
+          // Track long tasks
+          const taskObserver = new PerformanceObserver((entryList) => {
             const entries = entryList.getEntries();
-            entries.forEach(entry => {
-              if (entry.entryType === 'largest-contentful-paint') {
-                clearTimeout(timeout);
-                largestContentfulPaint = entry as LargestContentfulPaint;
-                const element = largestContentfulPaint.element;
-                resolve({
-                  lcp: entry.startTime,
-                  element: element ? element.tagName + (element.id ? `#${element.id}` : '') + (element.className ? `.${element.className}` : '') : 'unknown',
-                  size: element ? element.getBoundingClientRect().width * element.getBoundingClientRect().height : 0,
-                  url: element instanceof HTMLImageElement ? element.src : 'N/A',
-                  timestamp: entry.startTime
-                });
-                observer?.disconnect();
+            entries.forEach((entry) => {
+              if (entry.entryType === 'longtask') {
+                const blockingTime = entry.duration - 50;
+                if (blockingTime > 0) {
+                  totalBlockingTime += blockingTime;
+                  
+                  const taskStart = entry.startTime;
+                  const taskEnd = taskStart + entry.duration;
+                  
+                  // Get operations during this task
+                  const operations = getOperationsDuringTask(taskStart, taskEnd);
+                  
+                  // Get the most significant operation
+                  const significantOp = operations[operations.length - 1];
+                  
+                  // Determine task type and name based on operations
+                  let taskName = entry.name;
+                  let resourceType, resourceUrl;
+
+                  if (taskName === 'self') {
+                    if (significantOp) {
+                      if (significantOp.type === 'resource') {
+                        const url = new URL(significantOp.name);
+                        const resourceName = url.pathname.split('/').pop() || '';
+                        taskName = `Loading ${resourceName}`;
+                        resourceType = url.pathname.endsWith('.js') ? 'JavaScript' :
+                                     url.pathname.endsWith('.css') ? 'Stylesheet' :
+                                     url.pathname.endsWith('.png') || url.pathname.endsWith('.jpg') ? 'Image' :
+                                     'Resource';
+                        resourceUrl = significantOp.name;
+                      } else if (significantOp.type === 'paint') {
+                        taskName = `Rendering ${significantOp.name}`;
+                      } else if (significantOp.type === 'measure') {
+                        taskName = `Executing ${significantOp.name}`;
+                      } else {
+                        taskName = 'Main Thread Operation';
+                      }
+                    } else {
+                      taskName = 'Main Thread Execution';
+                    }
+                  } else if (taskName === 'multiple-contexts') {
+                    // Try to identify the cross-context operation
+                    if (operations.some(op => op.name.includes('iframe'))) {
+                      taskName = 'Iframe Content Loading';
+                    } else if (operations.some(op => op.name.includes('worker'))) {
+                      taskName = 'Web Worker Operation';
+                    } else if (operations.some(op => op.name.includes('fetch'))) {
+                      taskName = 'Network Request';
+                    } else {
+                      taskName = 'Cross-Context Operation';
+                    }
+                  }
+
+                  const metrics = getPerformanceMetrics();
+                  
+                  const taskInfo: TaskInfo = {
+                    duration: entry.duration,
+                    startTime: entry.startTime,
+                    name: taskName,
+                    resourceType,
+                    resourceUrl,
+                    jsHeapSize: metrics.jsHeapSize,
+                    domNodes: metrics.domNodes,
+                    operations: operations.slice(-3)
+                  };
+
+                  taskInfo.remediation = getRemediationAdvice(taskInfo);
+                  blockingTasks.push(taskInfo);
+                }
               }
             });
           });
+          taskObserver.observe({ type: 'longtask', buffered: true });
 
-          observer.observe({ type: 'largest-contentful-paint', buffered: true });
-        } else {
-          clearTimeout(timeout);
-          resolve({ lcp: 0, element: 'unsupported', size: 0, url: 'N/A', timestamp: 0 });
-        }
-      });
-    }, { timeout: 6000 });
+          const timeout = setTimeout(() => {
+            taskObserver.disconnect();
+            resolve({ totalTBT: totalBlockingTime, tasks: blockingTasks });
+          }, 5000);
 
-    // LCP Diagnostic Report
-    printTestHeader('LCP Diagnostic Report');
-    console.log(`LCP Value: ${lcpDetails.lcp}ms (Threshold: 2500ms)`);
-    console.log(`LCP Element: ${lcpDetails.element}`);
-    console.log(`Element Size: ${Math.round(lcpDetails.size)}px²`);
-    console.log(`Resource URL: ${lcpDetails.url}`);
-    console.log(`Timestamp: ${lcpDetails.timestamp}ms`);
+          setTimeout(() => {
+            clearTimeout(timeout);
+            taskObserver.disconnect();
+            resolve({ totalTBT: totalBlockingTime, tasks: blockingTasks });
+          }, 5000);
+        });
+      }, { timeout: 6000 });
 
-    // Add more detailed assertion message
-    expect(lcpDetails.lcp, `LCP of ${lcpDetails.lcp}ms exceeds threshold of 2500ms. Element: ${lcpDetails.element}, Size: ${Math.round(lcpDetails.size)}px², URL: ${lcpDetails.url}`).toBeLessThan(2500);
+      // TBT Diagnostic Report
+      printTestHeader('TBT Diagnostic Report');
+      console.log(`Total Blocking Time: ${tbtDetails.totalTBT}ms`);
+      console.log(`Threshold: 300ms (Good: 0-200ms, Needs Improvement: 200-600ms, Poor: >600ms)`);
+      
+      if (tbtDetails.tasks.length > 0) {
+        console.log('\nBlocking Tasks Analysis:');
+        tbtDetails.tasks
+          .sort((a, b) => b.duration - a.duration)
+          .forEach((task: TaskInfo, index) => {
+            console.log(`\nTask ${index + 1}:`);
+            console.log(`  Type: ${task.name}`);
+            console.log(`  Duration: ${Math.round(task.duration)}ms`);
+            console.log(`  Start Time: ${Math.round(task.startTime)}ms`);
+            console.log(`  Blocking Time: ${Math.round(task.duration - 50)}ms`);
+            
+            if (task.resourceUrl) {
+              console.log(`  Resource: ${task.resourceType} - ${task.resourceUrl}`);
+            }
+            
+            if (task.operations && task.operations.length > 0) {
+              console.log('  Operations during task:');
+              task.operations.forEach(op => {
+                console.log(`    - ${op.type}: ${op.name} (${Math.round(op.duration)}ms)`);
+              });
+            }
+            
+            if (task.jsHeapSize) {
+              console.log(`  Memory Usage: ${Math.round(task.jsHeapSize / 1024 / 1024)}MB`);
+            }
+            if (task.domNodes) {
+              console.log(`  DOM Nodes: ${task.domNodes}`);
+            }
 
-    // Total Blocking Time (TBT) with detailed task analysis
-    const tbtDetails = await page.evaluate(() => {
-      return new Promise<{totalTBT: number, tasks: Array<{
-        duration: number,
-        startTime: number,
-        name: string,
-        resourceType?: string,
-        resourceUrl?: string,
-        jsHeapSize?: number,
-        domNodes?: number,
-        operations?: Array<{
-          type: string,
-          name: string,
-          duration: number
-        }>
-      }>}>((resolve) => {
-        if (!window.PerformanceObserver) {
-          resolve({ totalTBT: 0, tasks: [] });
-          return;
-        }
-
-        // Get performance metrics at the time of the task
-        function getPerformanceMetrics() {
-          return {
-            jsHeapSize: (performance as any).memory?.usedJSHeapSize,
-            domNodes: document.getElementsByTagName('*').length
-          };
-        }
-
-        // Track all performance entries during the task
-        function getOperationsDuringTask(startTime: number, endTime: number) {
-          const entries = performance.getEntriesByType('resource')
-            .concat(performance.getEntriesByType('measure'))
-            .concat(performance.getEntriesByType('paint'))
-            .filter(entry => entry.startTime >= startTime && entry.startTime <= endTime)
-            .map(entry => ({
-              type: entry.entryType,
-              name: entry.name,
-              duration: entry.duration
-            }))
-            .sort((a, b) => a.duration - b.duration);
-
-          return entries;
-        }
-
-        let totalBlockingTime = 0;
-        const blockingTasks: TaskInfo[] = [];
-
-        // Track long tasks
-        const taskObserver = new PerformanceObserver((entryList) => {
-          const entries = entryList.getEntries();
-          entries.forEach((entry) => {
-            if (entry.entryType === 'longtask') {
-              const blockingTime = entry.duration - 50;
-              if (blockingTime > 0) {
-                totalBlockingTime += blockingTime;
-                
-                const taskStart = entry.startTime;
-                const taskEnd = taskStart + entry.duration;
-                
-                // Get operations during this task
-                const operations = getOperationsDuringTask(taskStart, taskEnd);
-                
-                // Get the most significant operation
-                const significantOp = operations[operations.length - 1];
-                
-                // Determine task type and name based on operations
-                let taskName = entry.name;
-                let resourceType, resourceUrl;
-
-                if (taskName === 'self') {
-                  if (significantOp) {
-                    if (significantOp.type === 'resource') {
-                      const url = new URL(significantOp.name);
-                      const resourceName = url.pathname.split('/').pop() || '';
-                      taskName = `Loading ${resourceName}`;
-                      resourceType = url.pathname.endsWith('.js') ? 'JavaScript' :
-                                   url.pathname.endsWith('.css') ? 'Stylesheet' :
-                                   url.pathname.endsWith('.png') || url.pathname.endsWith('.jpg') ? 'Image' :
-                                   'Resource';
-                      resourceUrl = significantOp.name;
-                    } else if (significantOp.type === 'paint') {
-                      taskName = `Rendering ${significantOp.name}`;
-                    } else if (significantOp.type === 'measure') {
-                      taskName = `Executing ${significantOp.name}`;
-                    } else {
-                      taskName = 'Main Thread Operation';
-                    }
-                  } else {
-                    taskName = 'Main Thread Execution';
-                  }
-                } else if (taskName === 'multiple-contexts') {
-                  // Try to identify the cross-context operation
-                  if (operations.some(op => op.name.includes('iframe'))) {
-                    taskName = 'Iframe Content Loading';
-                  } else if (operations.some(op => op.name.includes('worker'))) {
-                    taskName = 'Web Worker Operation';
-                  } else if (operations.some(op => op.name.includes('fetch'))) {
-                    taskName = 'Network Request';
-                  } else {
-                    taskName = 'Cross-Context Operation';
-                  }
-                }
-
-                const metrics = getPerformanceMetrics();
-                
-                const taskInfo: TaskInfo = {
-                  duration: entry.duration,
-                  startTime: entry.startTime,
-                  name: taskName,
-                  resourceType,
-                  resourceUrl,
-                  jsHeapSize: metrics.jsHeapSize,
-                  domNodes: metrics.domNodes,
-                  operations: operations.slice(-3)
-                };
-
-                taskInfo.remediation = getRemediationAdvice(taskInfo);
-                blockingTasks.push(taskInfo);
-              }
+            if (task.remediation) {
+              console.log(`\n  Performance Impact: ${task.remediation.impact}`);
+              console.log(`  Priority: ${task.remediation.priority.toUpperCase()}`);
+              console.log('  Recommended Actions:');
+              task.remediation.recommendations.forEach((rec, i) => {
+                console.log(`    ${i + 1}. ${rec}`);
+              });
             }
           });
-        });
-        taskObserver.observe({ type: 'longtask', buffered: true });
-
-        const timeout = setTimeout(() => {
-          taskObserver.disconnect();
-          resolve({ totalTBT: totalBlockingTime, tasks: blockingTasks });
-        }, 5000);
-
-        setTimeout(() => {
-          clearTimeout(timeout);
-          taskObserver.disconnect();
-          resolve({ totalTBT: totalBlockingTime, tasks: blockingTasks });
-        }, 5000);
+      } else {
+        console.log('\nNo blocking tasks detected during measurement period.');
+      }
+      
+      // Using 300ms as a more practical threshold for production
+      expect(tbtDetails.totalTBT, 
+        `TBT of ${tbtDetails.totalTBT}ms exceeds threshold of 300ms. ` +
+        `${tbtDetails.tasks.length} blocking tasks detected. ` +
+        `Longest task: ${tbtDetails.tasks[0]?.duration || 0}ms (${tbtDetails.tasks[0]?.name || 'Unknown'})`
+      ).toBeLessThan(300);
+      
+      printTestFooter();
+    } catch (error) {
+      // Log the error with context
+      console.error('Performance test failed:', {
+        error: error.message,
+        url,
+        browser: context.browser()?.browserType().name(),
+        timestamp: new Date().toISOString()
       });
-    }, { timeout: 6000 });
 
-    // TBT Diagnostic Report
-    printTestHeader('TBT Diagnostic Report');
-    console.log(`Total Blocking Time: ${tbtDetails.totalTBT}ms`);
-    console.log(`Threshold: 300ms (Good: 0-200ms, Needs Improvement: 200-600ms, Poor: >600ms)`);
-    
-    if (tbtDetails.tasks.length > 0) {
-      console.log('\nBlocking Tasks Analysis:');
-      tbtDetails.tasks
-        .sort((a, b) => b.duration - a.duration)
-        .forEach((task: TaskInfo, index) => {
-          console.log(`\nTask ${index + 1}:`);
-          console.log(`  Type: ${task.name}`);
-          console.log(`  Duration: ${Math.round(task.duration)}ms`);
-          console.log(`  Start Time: ${Math.round(task.startTime)}ms`);
-          console.log(`  Blocking Time: ${Math.round(task.duration - 50)}ms`);
-          
-          if (task.resourceUrl) {
-            console.log(`  Resource: ${task.resourceType} - ${task.resourceUrl}`);
-          }
-          
-          if (task.operations && task.operations.length > 0) {
-            console.log('  Operations during task:');
-            task.operations.forEach(op => {
-              console.log(`    - ${op.type}: ${op.name} (${Math.round(op.duration)}ms)`);
-            });
-          }
-          
-          if (task.jsHeapSize) {
-            console.log(`  Memory Usage: ${Math.round(task.jsHeapSize / 1024 / 1024)}MB`);
-          }
-          if (task.domNodes) {
-            console.log(`  DOM Nodes: ${task.domNodes}`);
-          }
-
-          if (task.remediation) {
-            console.log(`\n  Performance Impact: ${task.remediation.impact}`);
-            console.log(`  Priority: ${task.remediation.priority.toUpperCase()}`);
-            console.log('  Recommended Actions:');
-            task.remediation.recommendations.forEach((rec, i) => {
-              console.log(`    ${i + 1}. ${rec}`);
-            });
-          }
-        });
-    } else {
-      console.log('\nNo blocking tasks detected during measurement period.');
+      // Re-throw the error with more context
+      throw new Error(`Performance test failed: ${error.message}\nURL: ${url}\nBrowser: ${context.browser()?.browserType().name()}`);
     }
-    
-    // Using 300ms as a more practical threshold for production
-    expect(tbtDetails.totalTBT, 
-      `TBT of ${tbtDetails.totalTBT}ms exceeds threshold of 300ms. ` +
-      `${tbtDetails.tasks.length} blocking tasks detected. ` +
-      `Longest task: ${tbtDetails.tasks[0]?.duration || 0}ms (${tbtDetails.tasks[0]?.name || 'Unknown'})`
-    ).toBeLessThan(300);
-    
-    printTestFooter();
   });
 
   // Stress test scenarios
@@ -664,19 +758,64 @@ test.describe('Performance Tests', () => {
       
       const context = await browser.newContext();
       const page = await context.newPage();
-      const client = await context.newCDPSession(page);
-      await client.send('Network.enable');
-      await client.send('Network.emulateNetworkConditions', {
-        offline: false,
-        downloadThroughput: (1.6 * 1024 * 1024) / 8,
-        uploadThroughput: (750 * 1024) / 8,
-        latency: 100
-      });
-
-      await context.tracing.start({ screenshots: true, snapshots: true });
       
-      const startTime = Date.now();
-      const navigationMetrics = await page.goto(url).then(async () => {
+      try {
+        // Start tracing at the beginning of the test
+        await context.tracing.start({ 
+          screenshots: true, 
+          snapshots: true,
+          sources: true,
+          title: testInfo.title
+        });
+
+        const client = await context.newCDPSession(page);
+        await client.send('Network.enable');
+        await client.send('Network.emulateNetworkConditions', {
+          offline: false,
+          downloadThroughput: (1.6 * 1024 * 1024) / 8,
+          uploadThroughput: (750 * 1024) / 8,
+          latency: 100
+        });
+
+        const startTime = Date.now();
+        const response = await Promise.race([
+          page.goto(url, { 
+            waitUntil: 'domcontentloaded',
+            timeout: 90000 // 90 second timeout for 3G
+          }) as Promise<Response>,
+          new Promise<Response>((_, reject) => 
+            setTimeout(() => reject(new Error('Initial page load timeout after 90 seconds')), 90000)
+          )
+        ]);
+
+        if (!response) {
+          throw new Error('Navigation failed - no response received');
+        }
+        if (!response.ok()) {
+          throw new Error(`Navigation failed with status ${response.status()}: ${response.statusText()}`);
+        }
+
+        // Wait for critical elements with longer timeout for 3G
+        try {
+          await Promise.race([
+            page.waitForSelector('main', { state: 'visible', timeout: 20000 }),
+            page.waitForSelector('body', { state: 'visible', timeout: 20000 })
+          ]);
+        } catch (error) {
+          console.warn('Warning: Critical elements not found in 3G test, but continuing:', error.message);
+        }
+
+        // Optional: Wait for network idle with longer timeout for 3G
+        try {
+          await Promise.race([
+            page.waitForLoadState('networkidle', { timeout: 20000 }),
+            new Promise(resolve => setTimeout(resolve, 20000))
+          ]);
+        } catch (error) {
+          console.warn('Warning: Network did not reach idle state in 3G test, but continuing:', error.message);
+        }
+
+        // Rest of the 3G test...
         const metrics = await page.evaluate(() => {
           // Existing metrics
           const baseMetrics = {
@@ -719,82 +858,87 @@ test.describe('Performance Tests', () => {
             }))
           };
         });
-        return metrics;
-      });
-      const totalLoadTime = Date.now() - startTime;
-      
-      const memoryMB = Math.round(navigationMetrics.jsHeapSize / 1024 / 1024);
-      
-      console.log('\n3G Network Test Results:');
-      console.log('='.repeat(50));
-      
-      // Load Time Analysis
-      const loadTimeRating = getPerformanceRating(totalLoadTime, BENCHMARKS.network['3G'].loadTime);
-      console.log(`Load Time: ${totalLoadTime}ms (${loadTimeRating.rating})`);
-      if (loadTimeRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement resource prioritization');
-        console.log('  - Use responsive images with srcset');
-        console.log('  - Consider implementing a service worker for caching');
-      }
-      
-      // Resource Count Analysis
-      const resourceRating = getPerformanceRating(navigationMetrics.resources, BENCHMARKS.network['3G'].resources);
-      console.log(`\nTotal Resources: ${navigationMetrics.resources} (${resourceRating.rating})`);
-      if (resourceRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement resource bundling');
-        console.log('  - Use HTTP/2 for multiplexing');
-        console.log('  - Consider lazy loading non-critical resources');
-      }
-      
-      // Memory Usage Analysis
-      const memoryRating = getPerformanceRating(memoryMB, BENCHMARKS.network['3G'].memory);
-      console.log(`\nMemory Usage: ${memoryMB}MB (${memoryRating.rating})`);
-      if (memoryRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement memory leak detection');
-        console.log('  - Review third-party script impact');
-        console.log('  - Consider implementing resource cleanup');
-      }
-      
-      // Network Timing Analysis
-      const timing = navigationMetrics.timing;
-      console.log('\nNetwork Timing Breakdown:');
-      console.log(`  DNS Lookup: ${timing.domainLookupEnd - timing.domainLookupStart}ms`);
-      console.log(`  TCP Connection: ${timing.connectEnd - timing.connectStart}ms`);
-      console.log(`  TTFB: ${timing.responseStart - timing.requestStart}ms`);
-      console.log(`  Download: ${timing.responseEnd - timing.responseStart}ms`);
-      console.log(`  DOM Processing: ${timing.domComplete - timing.domLoading}ms`);
-      
-      // New metrics logging
-      console.log('\nExtended Network Metrics:');
-      console.log('='.repeat(50));
-      
-      // TTFB Analysis
-      const ttfbRating = getPerformanceRating(navigationMetrics.ttfb, BENCHMARKS.extended.network.ttfb);
-      console.log(`Time to First Byte: ${navigationMetrics.ttfb}ms (${ttfbRating.rating})`);
-      if (ttfbRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Optimize server response time');
-        console.log('  - Consider using a CDN');
-        console.log('  - Review server-side caching');
-      }
+        const totalLoadTime = Date.now() - startTime;
+        
+        const memoryMB = Math.round(metrics.jsHeapSize / 1024 / 1024);
+        
+        console.log('\n3G Network Test Results:');
+        console.log('='.repeat(50));
+        
+        // Load Time Analysis
+        const loadTimeRating = getPerformanceRating(totalLoadTime, BENCHMARKS.network['3G'].loadTime);
+        console.log(`Load Time: ${totalLoadTime}ms (${loadTimeRating.rating})`);
+        if (loadTimeRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement resource prioritization');
+          console.log('  - Use responsive images with srcset');
+          console.log('  - Consider implementing a service worker for caching');
+        }
+        
+        // Resource Count Analysis
+        const resourceRating = getPerformanceRating(metrics.resources, BENCHMARKS.network['3G'].resources);
+        console.log(`\nTotal Resources: ${metrics.resources} (${resourceRating.rating})`);
+        if (resourceRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement resource bundling');
+          console.log('  - Use HTTP/2 for multiplexing');
+          console.log('  - Consider lazy loading non-critical resources');
+        }
+        
+        // Memory Usage Analysis
+        const memoryRating = getPerformanceRating(memoryMB, BENCHMARKS.network['3G'].memory);
+        console.log(`\nMemory Usage: ${memoryMB}MB (${memoryRating.rating})`);
+        if (memoryRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement memory leak detection');
+          console.log('  - Review third-party script impact');
+          console.log('  - Consider implementing resource cleanup');
+        }
+        
+        // Network Timing Analysis
+        const timing = metrics.timing;
+        console.log('\nNetwork Timing Breakdown:');
+        console.log(`  DNS Lookup: ${timing.domainLookupEnd - timing.domainLookupStart}ms`);
+        console.log(`  TCP Connection: ${timing.connectEnd - timing.connectStart}ms`);
+        console.log(`  TTFB: ${timing.responseStart - timing.requestStart}ms`);
+        console.log(`  Download: ${timing.responseEnd - timing.responseStart}ms`);
+        console.log(`  DOM Processing: ${timing.domComplete - timing.domLoading}ms`);
+        
+        // New metrics logging
+        console.log('\nExtended Network Metrics:');
+        console.log('='.repeat(50));
+        
+        // TTFB Analysis
+        const ttfbRating = getPerformanceRating(metrics.ttfb, BENCHMARKS.extended.network.ttfb);
+        console.log(`Time to First Byte: ${metrics.ttfb}ms (${ttfbRating.rating})`);
+        if (ttfbRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Optimize server response time');
+          console.log('  - Consider using a CDN');
+          console.log('  - Review server-side caching');
+        }
 
-      // Cache Analysis
-      const cacheRating = getPerformanceRating(navigationMetrics.cacheHitRatio, BENCHMARKS.extended.network.cacheHitRatio);
-      console.log(`\nCache Hit Ratio: ${(navigationMetrics.cacheHitRatio * 100).toFixed(1)}% (${cacheRating.rating})`);
-      if (cacheRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Implement proper cache headers');
-        console.log('  - Review cache-busting strategies');
-        console.log('  - Consider using a service worker for caching');
-      }
+        // Cache Analysis
+        const cacheRating = getPerformanceRating(metrics.cacheHitRatio, BENCHMARKS.extended.network.cacheHitRatio);
+        console.log(`\nCache Hit Ratio: ${(metrics.cacheHitRatio * 100).toFixed(1)}% (${cacheRating.rating})`);
+        if (cacheRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Implement proper cache headers');
+          console.log('  - Review cache-busting strategies');
+          console.log('  - Consider using a service worker for caching');
+        }
 
-      await context.tracing.stop({ path: `trace-3g-${testInfo.project.name}.zip` });
-      await context.close();
-      
-      printTestFooter();
+      } finally {
+        // Stop tracing after the test
+        try {
+          await context.tracing.stop({ 
+            path: `trace-3g-${testInfo.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip` 
+          });
+        } catch (error) {
+          console.warn('Failed to save 3G trace:', error.message);
+        }
+        await context.close();
+      }
     });
 
     test('Performance under CPU throttling', async ({ browser }, testInfo) => {

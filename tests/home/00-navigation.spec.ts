@@ -117,15 +117,26 @@ test.describe('Signup Navigation Flow', () => {
           const link = page.locator(linkData.selector);
           await link.waitFor({ state: 'visible', timeout: 5000 });
           
-          // Click the link and wait for URL change
-          await link.click();
-          await page.waitForURL(/get-allo/, { timeout: 15000 });
+          // Click the link and wait for navigation
+          await Promise.all([
+            page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
+            link.click()
+          ]);
+          
+          // Verify we're not on the error page
+          const errorHeading = page.getByRole('heading', { name: 'Oops! You hit a snag.' });
+          if (await errorHeading.isVisible()) {
+            throw new Error('Navigation failed - hit error page');
+          }
           
           // Wait for loading to complete
-          await page.locator('progressbar[aria-label="Loading"]').waitFor({ state: 'hidden', timeout: 10000 });
+          await page.locator('progressbar[aria-label="Loading"]').waitFor({ 
+            state: 'hidden', 
+            timeout: 10000 
+          });
           
           // Verify we're on the signup page
-          await expect(page).toHaveURL(/get-allo/);
+          await expect(page).toHaveURL(/^https:\/\/customer\.allofiber\.com\/get-allo\/step1/);
           await expect(page.getByRole('heading', { name: 'Sign Up For ALLO' })).toBeVisible();
           
           console.log(`✓ Successfully navigated to ${linkData.text} signup page`);
