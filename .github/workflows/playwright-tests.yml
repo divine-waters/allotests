@@ -27,8 +27,10 @@ jobs:
             echo "{\"path\": \"$file\", \"safe_name\": \"$SAFE_NAME\"}";
           done | jq -s .)
           
-          # Set the output for the matrix
-          echo "matrix=$TEST_FILES" >> "$GITHUB_OUTPUT"
+          # Set the output for the matrix using a multi-line string format
+          echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TEST_FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
   test:
     needs: [find_tests]
