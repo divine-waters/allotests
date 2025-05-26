@@ -69,25 +69,48 @@ jobs:
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps chromium
 
-    - name: Modify Playwright Config for Single Test
+    - name: Generate Temporary Playwright Config
       run: |
+        TEMP_DIR="./temp_playwright_config"
+        mkdir -p "$TEMP_DIR"
+        CONFIG_FILE="$TEMP_DIR/playwright.config.js"
+
+        # Escape the test file path for use in regex
         TEST_FILE="${{ matrix.path }}"
-        # Escape forward slashes for sed regex
-        ESCAPED_TEST_FILE=$(echo "$TEST_FILE" | sed 's/\//\\\//g')
+        # Escape backslashes, forward slashes, and dots for regex
+        ESCAPED_TEST_FILE=$(echo "$TEST_FILE" | sed 's/\\/\\\\/g; s/\//\\\//g; s/\./\\./g')
+
+        echo "// Temporary Playwright config for single test" > "$CONFIG_FILE"
+        echo "const { defineConfig, devices } = require('@playwright/test');" >> "$CONFIG_FILE"
+        echo "" >> "$CONFIG_FILE"
+        echo "module.exports = defineConfig({" >> "$CONFIG_FILE"
+        echo "  testDir: '., // Look for tests in the current directory (where the command is run)" >> "$CONFIG_FILE"
+        echo "  fullyParallel: true," >> "$CONFIG_FILE"
+        echo "  forbidOnly: !!process.env.CI," >> "$CONFIG_FILE"
+        echo "  retries: process.env.CI ? 2 : 0," >> "$CONFIG_FILE"
+        echo "  workers: 1, // Use 1 worker per job" >> "$CONFIG_FILE"
+        echo "  reporter: 'html'," >> "$CONFIG_FILE"
+        echo "  use: {" >> "$CONFIG_FILE"
+        echo "    trace: 'on-first-retry'," >> "$CONFIG_FILE"
+        echo "    ...devices['Desktop Chrome']," >> "$CONFIG_FILE"
+        echo "  }," >> "$CONFIG_FILE"
+        echo "  projects: [{" >> "$CONFIG_FILE"
+        echo "    name: 'chromium'," >> "$CONFIG_FILE"
+        echo "    testMatch: /$ESCAPED_TEST_FILE/," >> "$CONFIG_FILE"
+        echo "  }]" >> "$CONFIG_FILE"
+        echo "});" >> "$CONFIG_FILE"
         
-        # Use sed to modify playwright.config.ts
-        # Find the 'chromium' project and add/replace the testMatch line
-        sed -i '/name: \'chromium\',/ {\n  s|testMatch: /.*\/,|testMatch: /'$ESCAPED_TEST_FILE'\/,|; t\n  a\\\n  testMatch: /'$ESCAPED_TEST_FILE'/\n}' playwright.config.ts
+        echo "Generated config file: $(cat $CONFIG_FILE)" # For debugging
 
     - name: Run Playwright tests
       run: |
-        # Use the safe name provided by the matrix
+        # Generate a safe name for the output directory from the file path
         SAFE_NAME="${{ matrix.safe_name }}"
         export SAFE_NAME # Export the variable
         PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
         mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
-        # Run only the specific test file assigned to this job
-        npx playwright test "${{ matrix.path }}" --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
+        # Run tests using the temporary config file for the specific test
+        npx playwright test --config ./temp_playwright_config/playwright.config.js --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
         # Optionally, generate HTML report directly into the output directory
         # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
 
