@@ -395,6 +395,9 @@ function printTestFooter() {
 }
 
 test.describe('Performance Tests', () => {
+  // Disable retries for all tests in this file
+  test.describe.configure({ retries: 0 });
+
   // Increase the default timeout for all tests in this suite
   test.setTimeout(120000); // 2 minutes total timeout for the suite
 
