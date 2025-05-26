@@ -81,20 +81,22 @@ jobs:
 
     - name: Run Playwright tests
       run: |
-        # Generate a safe name for the output directory from the file path
-        SAFE_NAME=$(echo "${{ matrix.path }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        # Use the safe name provided by the matrix
+        SAFE_NAME="${{ matrix.safe_name }}"
+        export SAFE_NAME # Export the variable
         PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
         mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
-        # Run tests using the modified config - no need to specify file path here
-        npx playwright test --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
+        # Run only the specific test file assigned to this job
+        npx playwright test "${{ matrix.path }}" --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
         # Optionally, generate HTML report directly into the output directory
         # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
 
     - name: Create Combined Artifact
       if: always()
       run: |
-        # Generate a safe name for the output directory
-        SAFE_NAME=$(echo "${{ matrix.path }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        # Use the safe name provided by the matrix
+        SAFE_NAME="${{ matrix.safe_name }}"
+        export SAFE_NAME # Export the variable
         # Create a summary file within the output directory
         echo "Test Run Summary" > test-results-$SAFE_NAME/README.md
         echo "===============" >> test-results-$SAFE_NAME/README.md
@@ -116,14 +118,15 @@ jobs:
     - name: Generate safe artifact name
       id: generate_safe_name
       run: |
-        # Generate a safe name for the artifact name and path
-        SAFE_NAME=$(echo "${{ matrix.path }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        # Use the safe name provided by the matrix
+        SAFE_NAME="${{ matrix.safe_name }}"
+        export SAFE_NAME # Export the variable
         echo "safe_name=$SAFE_NAME" >> "$GITHUB_OUTPUT"
 
     - name: Upload Combined Artifact
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ steps.generate_safe_name.outputs.safe_name }}-${{ github.run_id }}
-        path: test-results-${{ steps.generate_safe_name.outputs.safe_name }}/
+        name: test-results-${{ matrix.safe_name }}-${{ github.run_id }}
+        path: test-results-${{ matrix.safe_name }}/
         retention-days: 7
