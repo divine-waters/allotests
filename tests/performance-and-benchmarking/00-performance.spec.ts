@@ -398,17 +398,15 @@ test.describe('Performance Tests', () => {
   // Increase the default timeout for all tests in this suite
   test.setTimeout(120000); // 2 minutes total timeout for the suite
 
-  test.beforeEach(async ({ browser, page }, testInfo) => {
-    // Skip test if not using Chromium
-    if (browser.browserType().name() !== 'chromium') {
+  test.beforeEach(async ({ page, context }, testInfo) => { // Use page and context fixtures
+    // Skip test if not using Chromium, check using the context
+    if (context.browser()?.browserType().name() !== 'chromium') {
       test.skip(true, 'Performance tests with network throttling are only supported in Chromium');
       return;
     }
 
-    // Setup network throttling for Chromium
-    const context = await browser.newContext();
-    const newPage = await context.newPage();
-    const client = await context.newCDPSession(newPage);
+    // Setup network throttling and tracing on the provided context
+    const client = await context.newCDPSession(page); // Use the page from the fixture context
     await client.send('Network.enable');
     await client.send('Network.emulateNetworkConditions', {
       offline: false,
@@ -416,28 +414,26 @@ test.describe('Performance Tests', () => {
       downloadThroughput: 1024 * 1024 / 8, // 1 Mbps
       uploadThroughput: 1024 * 1024 / 8 // 1 Mbps
     });
-
-    // Use the throttled page for the test
-    await page.close();
-    Object.assign(page, newPage);
-
+    
     // Start tracing at the beginning of each test
     await context.tracing.start({ 
       screenshots: true, 
       snapshots: true,
       sources: true,
-      title: testInfo.title
+      title: testInfo.title // Playwright uses this for trace identification
     });
   });
 
-  test.afterEach(async ({ context }) => {
-    // Stop tracing after each test
-    try {
-      await context.tracing.stop({ 
-        path: `trace-${test.info().title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip` 
-      });
-    } catch (error) {
-      console.warn('Failed to save trace:', error.message);
+  test.afterEach(async ({ context }, testInfo) => { // testInfo can be accessed here too
+    // Stop tracing after each test, only if it's Chromium (where tracing would have been started)
+    if (context.browser()?.browserType().name() === 'chromium') {
+      try {
+        await context.tracing.stop({ 
+          path: `trace-${testInfo.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip` 
+        });
+      } catch (error) {
+        console.warn(`Failed to save trace in afterEach for "${testInfo.title}": ${error.message}`);
+      }
     }
   });
 
@@ -758,7 +754,6 @@ test.describe('Performance Tests', () => {
       
       const context = await browser.newContext();
       const page = await context.newPage();
-      
       try {
         // Start tracing at the beginning of the test
         await context.tracing.start({ 
@@ -766,7 +761,7 @@ test.describe('Performance Tests', () => {
           snapshots: true,
           sources: true,
           title: testInfo.title
-        });
+        }); // Tracing on the new local context
 
         const client = await context.newCDPSession(page);
         await client.send('Network.enable');
@@ -935,7 +930,7 @@ test.describe('Performance Tests', () => {
             path: `trace-3g-${testInfo.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip` 
           });
         } catch (error) {
-          console.warn('Failed to save 3G trace:', error.message);
+          console.warn(`Failed to save 3G trace for "${testInfo.title}": ${error.message}`);
         }
         await context.close();
       }
@@ -946,54 +941,64 @@ test.describe('Performance Tests', () => {
       
       const context = await browser.newContext();
       const page = await context.newPage();
-      
-      await context.tracing.start({ screenshots: true, snapshots: true });
-      
-      const startTime = Date.now();
-      const metrics = await page.goto(url).then(async () => {
-        // Measure JavaScript execution time
-        const jsExecutionTime = await page.evaluate(() => {
-          const start = performance.now();
-          // Simulate CPU-intensive operation
-          for (let i = 0; i < 1000000; i++) {
-            Math.random() * Math.random();
-          }
-          return performance.now() - start;
+      try {
+        await context.tracing.start({ 
+          screenshots: true, 
+          snapshots: true, 
+          sources: true, 
+          title: testInfo.title 
+        }); // Tracing on the new local context
+        
+        const startTime = Date.now();
+        const metrics = await page.goto(url).then(async () => {
+          // Measure JavaScript execution time
+          const jsExecutionTime = await page.evaluate(() => {
+            const start = performance.now();
+            // Simulate CPU-intensive operation
+            for (let i = 0; i < 1000000; i++) {
+              Math.random() * Math.random();
+            }
+            return performance.now() - start;
+          });
+          
+          return {
+            loadTime: Date.now() - startTime,
+            jsExecutionTime,
+            jsHeapSize: (await page.evaluate(() => (performance as any).memory?.usedJSHeapSize)),
+            domNodes: await page.evaluate(() => document.getElementsByTagName('*').length)
+          };
         });
         
-        return {
-          loadTime: Date.now() - startTime,
-          jsExecutionTime,
-          jsHeapSize: (await page.evaluate(() => (performance as any).memory?.usedJSHeapSize)),
-          domNodes: await page.evaluate(() => document.getElementsByTagName('*').length)
-        };
-      });
-      
-      console.log('\nCPU Throttling Test Results:');
-      console.log('='.repeat(50));
-      
-      // Load Time Analysis
-      const loadTimeRating = getPerformanceRating(metrics.loadTime, BENCHMARKS.cpu.loadTime);
-      console.log(`Total Load Time: ${metrics.loadTime}ms (${loadTimeRating.rating})`);
-      if (loadTimeRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Optimize critical rendering path');
-        console.log('  - Reduce main thread work');
-        console.log('  - Consider code splitting');
+        console.log('\nCPU Throttling Test Results:');
+        console.log('='.repeat(50));
+        
+        // Load Time Analysis
+        const loadTimeRating = getPerformanceRating(metrics.loadTime, BENCHMARKS.cpu.loadTime);
+        console.log(`Total Load Time: ${metrics.loadTime}ms (${loadTimeRating.rating})`);
+        if (loadTimeRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Optimize critical rendering path');
+          console.log('  - Reduce main thread work');
+          console.log('  - Consider code splitting');
+        }
+        
+        // JS Execution Analysis
+        const jsRating = getPerformanceRating(metrics.jsExecutionTime, BENCHMARKS.cpu.jsExecutionTime);
+        console.log(`\nJavaScript Execution Time: ${Math.round(metrics.jsExecutionTime)}ms (${jsRating.rating})`);
+        if (jsRating.needsAction) {
+          console.log('  Recommendations:');
+          console.log('  - Profile JavaScript execution');
+          console.log('  - Consider using Web Workers');
+          console.log('  - Implement code splitting and lazy loading');
+        }
+      } finally {
+        try {
+          await context.tracing.stop({ path: `trace-cpu-${testInfo.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip` });
+        } catch (error) {
+          console.warn(`Failed to save CPU trace for "${testInfo.title}": ${error.message}`);
+        }
+        await context.close();
       }
-      
-      // JS Execution Analysis
-      const jsRating = getPerformanceRating(metrics.jsExecutionTime, BENCHMARKS.cpu.jsExecutionTime);
-      console.log(`\nJavaScript Execution Time: ${Math.round(metrics.jsExecutionTime)}ms (${jsRating.rating})`);
-      if (jsRating.needsAction) {
-        console.log('  Recommendations:');
-        console.log('  - Profile JavaScript execution');
-        console.log('  - Consider using Web Workers');
-        console.log('  - Implement code splitting and lazy loading');
-      }
-      
-      await context.tracing.stop({ path: `trace-cpu-${testInfo.project.name}.zip` });
-      await context.close();
       
       printTestFooter();
     });
