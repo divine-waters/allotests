@@ -19,10 +19,16 @@ jobs:
       - name: Find test files
         id: list_files
         run: |
-          find tests -name '*.spec.ts' | while read file; do
+          # Find all spec files, create a safe name, format as JSON, and set as output
+          TEST_FILES=$(find tests -name '*.spec.ts' | while read file; do
+            # Generate a safe name by replacing non-alphanumeric/underscore/dash/dot chars with underscore and removing .spec.ts
             SAFE_NAME=$(echo "$file" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+            # Output JSON object for each file
             echo "{\"path\": \"$file\", \"safe_name\": \"$SAFE_NAME\"}";
-          done | jq -s .
+          done | jq -s .)
+          
+          # Set the output for the matrix
+          echo "matrix=$TEST_FILES" >> "$GITHUB_OUTPUT"
 
   test:
     needs: [find_tests]
