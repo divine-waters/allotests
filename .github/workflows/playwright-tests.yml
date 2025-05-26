@@ -19,13 +19,8 @@ jobs:
       - name: Find test files
         id: list_files
         run: |
-          # Find all spec files, create a safe name, format as JSON, and set as output
-          TEST_FILES=$(find tests -name '*.spec.ts' | while read file; do
-            # Generate a safe name by replacing non-alphanumeric/underscore/dash/dot chars with underscore and removing .spec.ts
-            SAFE_NAME=$(echo "$file" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
-            # Output JSON object for each file
-            echo "{\"path\": \"$file\", \"safe_name\": \"$SAFE_NAME\"}";
-          done | jq -s .)
+          # Find all spec files, format as a JSON array of paths, and set as output
+          TEST_FILES=$(find tests -name '*.spec.ts' | jq -R . | jq -s .)
           
           # Set the output for the matrix using a multi-line string format
           echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
@@ -37,7 +32,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        include: ${{ needs.find_tests.outputs.matrix }}
+        test_file: ${{ needs.find_tests.outputs.matrix }}
     runs-on: ubuntu-latest
 
     steps:
@@ -71,39 +66,48 @@ jobs:
 
     - name: Run Playwright tests
       run: |
-        # Configure Playwright to output results into a directory named after the safe test name
-        PLAYWRIGHT_OUTPUT_DIR="test-results-${{ matrix.safe_name }}"
+        # Generate a safe name for the output directory from the file path
+        SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
         mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
-        npx playwright test ${{ matrix.path }} --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
+        npx playwright test ${{ matrix.test_file }} --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
         # Optionally, generate HTML report directly into the output directory
         # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
 
     - name: Create Combined Artifact
       if: always()
       run: |
-        # The combined artifact is the Playwright output directory itself
+        # Generate a safe name for the output directory
+        SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
         # Create a summary file within the output directory
-        echo "Test Run Summary" > test-results-${{ matrix.safe_name }}/README.md
-        echo "===============" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "Run ID: ${{ github.run_id }}" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "Branch: ${{ github.ref }}" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "Commit: ${{ github.sha }}" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "Test Configuration:" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "- Browser: Chromium" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "- Workers: 1" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "- Test File: ${{ matrix.path }}" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "- Artifact Safe Name: ${{ matrix.safe_name }}" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "Contents:" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "- Playwright HTML Report: index.html (if generated in config)" >> test-results-${{ matrix.safe_name }}/README.md
-        echo "- Test Results (including logs and screenshots): Contents of this directory" >> test-results-${{ matrix.safe_name }}/README.md
+        echo "Test Run Summary" > test-results-$SAFE_NAME/README.md
+        echo "===============" >> test-results-$SAFE_NAME/README.md
+        echo "" >> test-results-$SAFE_NAME/README.md
+        echo "Run ID: ${{ github.run_id }}" >> test-results-$SAFE_NAME/README.md
+        echo "Branch: ${{ github.ref }}" >> test-results-$SAFE_NAME/README.md
+        echo "Commit: ${{ github.sha }}" >> test-results-$SAFE_NAME/README.md
+        echo "" >> test-results-$SAFE_NAME/README.md
+        echo "Test Configuration:" >> test-results-$SAFE_NAME/README.md
+        echo "- Browser: Chromium" >> test-results-$SAFE_NAME/README.md
+        echo "- Workers: 1" >> test-results-$SAFE_NAME/README.md
+        echo "- Test File: ${{ matrix.test_file }}" >> test-results-$SAFE_NAME/README.md
+        echo "- Artifact Safe Name: $SAFE_NAME" >> test-results-$SAFE_NAME/README.md
+        echo "" >> test-results-$SAFE_NAME/README.md
+        echo "Contents:" >> test-results-$SAFE_NAME/README.md
+        echo "- Playwright HTML Report: index.html (if generated in config)" >> test-results-$SAFE_NAME/README.md
+        echo "- Test Results (including logs and screenshots): Contents of this directory" >> test-results-$SAFE_NAME/README.md
+
+    - name: Generate safe artifact name
+      id: generate_safe_name
+      run: |
+        # Generate a safe name for the artifact name and path
+        SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        echo "safe_name=$SAFE_NAME" >> "$GITHUB_OUTPUT"
 
     - name: Upload Combined Artifact
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ matrix.safe_name }}-${{ github.run_id }}
-        path: test-results-${{ matrix.safe_name }}/
+        name: test-results-${{ steps.generate_safe_name.outputs.safe_name }}-${{ github.run_id }}
+        path: test-results-${{ steps.generate_safe_name.outputs.safe_name }}/
         retention-days: 7
