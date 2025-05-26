@@ -20,8 +20,6 @@ function escapeRegex(string) {
  * See https://playwright.dev/docs/test-configuration.
  */
 
-const baseTestIgnore = [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/];
-
 export default defineConfig({
   testDir: './tests',
   /* Run tests in files in parallel */
@@ -45,65 +43,46 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
-    // Performance tests project - runs sequentially and only in Chromium
-    {
-      name: 'performance',
-      testMatch: /.*\.performance\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
-      fullyParallel: false,  // Run tests sequentially
-      workers: 1,  // Use only one worker
-    },
-
-    // Competitor performance tests project - runs sequentially and only in Chromium
-    {
-      name: 'competitor-performance',
-      testMatch: /.*competitor-performance\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
-      fullyParallel: false,  // Run tests sequentially
-      workers: 1,  // Use only one worker
-    },
-
     // Regular test projects - run in parallel across all browsers
     {
       name: 'chromium',
       testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
-      testIgnore: baseTestIgnore,
       use: { ...devices['Desktop Chrome'] },
     },
 
     {
       name: 'firefox',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
 
     {
       name: 'webkit',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
       use: { ...devices['Desktop Safari'] },
     },
 
     {
       name: 'Mobile Chrome',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
       use: { ...devices['Pixel 5'] },
     },
 
     {
       name: 'Mobile Safari',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
       use: { ...devices['iPhone 12'] },
     },
 
     {
       name: 'Microsoft Edge',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
       use: { ...devices['Desktop Edge'], channel: 'msedge' },
     },
 
     {
       name: 'Google Chrome',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
   ],
