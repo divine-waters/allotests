@@ -69,13 +69,24 @@ jobs:
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps chromium
 
+    - name: Modify Playwright Config for Single Test
+      run: |
+        TEST_FILE="${{ matrix.path }}"
+        # Escape forward slashes for sed regex
+        ESCAPED_TEST_FILE=$(echo "$TEST_FILE" | sed 's/\//\\\//g')
+        
+        # Use sed to modify playwright.config.ts
+        # Find the 'chromium' project and add/replace the testMatch line
+        sed -i '/name: \'chromium\',/{ \n  testMatch: /'"$ESCAPED_TEST_FILE"'/, /\n}' playwright.config.ts
+
     - name: Run Playwright tests
       run: |
         # Generate a safe name for the output directory from the file path
         SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
         PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
         mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
-        npx playwright test ${{ matrix.test_file }} --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
+        # Run tests using the modified config - no need to specify file path here
+        npx playwright test --workers=1 --project=chromium --output="$PLAYWRIGHT_OUTPUT_DIR"
         # Optionally, generate HTML report directly into the output directory
         # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
 
