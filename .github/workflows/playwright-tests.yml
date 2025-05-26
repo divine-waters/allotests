@@ -77,12 +77,12 @@ jobs:
         
         # Use sed to modify playwright.config.ts
         # Find the 'chromium' project and add/replace the testMatch line
-        sed -i '/name: \'chromium\',/{ \n  testMatch: /'"$ESCAPED_TEST_FILE"'/, /\n}' playwright.config.ts
+        sed -i '/name: \'chromium\',/ {\n  s|testMatch: /.*\/,|testMatch: /'$ESCAPED_TEST_FILE'\/,|; t\n  a\\\n  testMatch: /'$ESCAPED_TEST_FILE'/\n}' playwright.config.ts
 
     - name: Run Playwright tests
       run: |
         # Generate a safe name for the output directory from the file path
-        SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        SAFE_NAME=$(echo "${{ matrix.path }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
         PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
         mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
         # Run tests using the modified config - no need to specify file path here
@@ -94,7 +94,7 @@ jobs:
       if: always()
       run: |
         # Generate a safe name for the output directory
-        SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        SAFE_NAME=$(echo "${{ matrix.path }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
         # Create a summary file within the output directory
         echo "Test Run Summary" > test-results-$SAFE_NAME/README.md
         echo "===============" >> test-results-$SAFE_NAME/README.md
@@ -106,7 +106,7 @@ jobs:
         echo "Test Configuration:" >> test-results-$SAFE_NAME/README.md
         echo "- Browser: Chromium" >> test-results-$SAFE_NAME/README.md
         echo "- Workers: 1" >> test-results-$SAFE_NAME/README.md
-        echo "- Test File: ${{ matrix.test_file }}" >> test-results-$SAFE_NAME/README.md
+        echo "- Test File: ${{ matrix.path }}" >> test-results-$SAFE_NAME/README.md
         echo "- Artifact Safe Name: $SAFE_NAME" >> test-results-$SAFE_NAME/README.md
         echo "" >> test-results-$SAFE_NAME/README.md
         echo "Contents:" >> test-results-$SAFE_NAME/README.md
@@ -117,7 +117,7 @@ jobs:
       id: generate_safe_name
       run: |
         # Generate a safe name for the artifact name and path
-        SAFE_NAME=$(echo "${{ matrix.test_file }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
+        SAFE_NAME=$(echo "${{ matrix.path }}" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/\.\(spec\.ts\)$//');
         echo "safe_name=$SAFE_NAME" >> "$GITHUB_OUTPUT"
 
     - name: Upload Combined Artifact
