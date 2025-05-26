@@ -76,11 +76,9 @@ jobs:
         SAFE_NAME="${{ matrix.safe_name }}"
         export SAFE_NAME # Export the variable
         PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
-        mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
-        # Run tests using the TARGET_SPEC_FILE environment variable
-        TARGET_SPEC_FILE="${{ matrix.path }}" npx playwright test --project=chromium --workers=1 --output="$PLAYWRIGHT_OUTPUT_DIR"
-        # Optionally, generate HTML report directly into the output directory
-        # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
+        mkdir -p "$PLAYWRIGHT_OUTPUT_DIR" # Ensure output directory exists
+        # Run tests by passing the specific file path directly to Playwright
+        npx playwright test "${{ matrix.path }}" --project=chromium --workers=1 --output="$PLAYWRIGHT_OUTPUT_DIR"
 
     - name: Create Combined Artifact
       if: always()
