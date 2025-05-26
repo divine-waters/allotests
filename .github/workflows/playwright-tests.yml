@@ -76,8 +76,8 @@ jobs:
         export SAFE_NAME # Export the variable
         PLAYWRIGHT_OUTPUT_DIR="test-results-$SAFE_NAME"
         mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
-        # Run tests using the TARGET_SPEC_FILE environment variable
-        TARGET_SPEC_FILE="${{ matrix.path }}" npx playwright test --project=chromium --workers=1 --output="$PLAYWRIGHT_OUTPUT_DIR"
+        # Run only the specific test file assigned to this job
+        npx playwright test "${{ matrix.path }}" --project=chromium --workers=1 --output="$PLAYWRIGHT_OUTPUT_DIR"
         # Optionally, generate HTML report directly into the output directory
         # npx playwright show-report "$PLAYWRIGHT_OUTPUT_DIR" --output="$PLAYWRIGHT_OUTPUT_DIR/playwright-report"
 

@@ -12,17 +12,6 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration.
  */
 
-// Get the target spec file from the environment variable, if set
-const targetSpecFile = process.env.TARGET_SPEC_FILE;
-
-// Function to escape a string for use in a regex
-function escapeRegex(string) {
-  return string.replace(/[.*+?^${}()|\[\]\\]/g, '\\$&'); // $& means the whole matched string
-}
-
-// Base ignore patterns for performance and competitor-performance tests
-const baseTestIgnore = [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/];
-
 export default defineConfig({
   testDir: './tests',
   /* Run tests in files in parallel */
@@ -32,7 +21,7 @@ export default defineConfig({
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
   /* Opt out of parallel tests on CI. */
-  workers: process.env.CI && !targetSpecFile ? 1 : undefined, // Use 1 worker on CI only if not running a single file
+  workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
@@ -67,44 +56,43 @@ export default defineConfig({
     // Regular test projects - run in parallel across all browsers
     {
       name: 'chromium',
-      testMatch: targetSpecFile ? new RegExp('^' + escapeRegex(targetSpecFile) + '$') : /.*\.spec\.ts$/,
-      testIgnore: baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
 
     {
       name: 'firefox',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Firefox'] },
     },
 
     {
       name: 'webkit',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Safari'] },
     },
 
     {
       name: 'Mobile Chrome',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Pixel 5'] },
     },
 
     {
       name: 'Mobile Safari',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['iPhone 12'] },
     },
 
     {
       name: 'Microsoft Edge',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Edge'], channel: 'msedge' },
     },
 
     {
       name: 'Google Chrome',
-      testIgnore: targetSpecFile ? [...baseTestIgnore, /.*\.spec\.ts$/] : baseTestIgnore,
+      testIgnore: [/.*\.performance\.spec\.ts/, /.*competitor-performance\.spec\.ts/],
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
   ],
