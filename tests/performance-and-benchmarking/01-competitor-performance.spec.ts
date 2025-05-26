@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { calculateScore, getRating, getMetricStatus, printTestHeader, printTestFooter } from './utils'; // Import from utils
-import { THRESHOLDS, COMPETITORS } from './constants'; // Import COMPETITORS
+import { calculateScore, getRating, getMetricStatus, printTestHeader, printTestFooter } from '../utils'; // Import from utils
+import { THRESHOLDS, COMPETITORS } from '../constants'; // Import COMPETITORS
 
 
 interface PerformanceMetrics {

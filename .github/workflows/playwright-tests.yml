@@ -37,6 +37,7 @@ jobs:
     needs: [find_tests]
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix: ${{ fromJson(needs.find_tests.outputs.matrix) }}
     runs-on: ubuntu-latest
 
@@ -112,14 +113,6 @@ jobs:
           "- Test Results (including logs and screenshots): Contents of this directory" > "$PLAYWRIGHT_OUTPUT_DIR/README.md"
 
     - name: Generate safe artifact name
-      id: generate_safe_name
-      run: |
-        # Use the safe name provided by the matrix
-        SAFE_NAME="${{ matrix.safe_name }}"
-        export SAFE_NAME # Export the variable
-        echo "safe_name=$SAFE_NAME" >> "$GITHUB_OUTPUT"
-
-    - name: Upload Combined Artifact
       if: always()
       uses: actions/upload-artifact@v4
       with:
